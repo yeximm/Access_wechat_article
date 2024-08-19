@@ -22,6 +22,10 @@
 
 建议使用虚拟环境运行项目
 
+[requirements.txt](https://github.com/yeximm/Access_wechat_article/blob/master/requirements.txt)中包含所需python包文件名称
+
+使用`pip install -r requirements.txt`批量安装python包文件
+
 ## 项目所需环境及工具
 
 1. 系统环境：Windows 10 ×64
