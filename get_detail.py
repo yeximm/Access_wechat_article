@@ -3,10 +3,11 @@ import json
 import jsonpath
 import random
 import re
-from article_list import GetUser
+import openpyxl
+from save_content import GetList
 
 
-class GetDetail(GetUser):
+class SaveAllDetail(GetList):
     def __init__(self):
         super().__init__()
 
@@ -138,3 +139,33 @@ class GetDetail(GetUser):
                 req_id = ''
             # return r, biz, appmsg_type, mid, sn, idx, ct, title, comment_id, version, req_id
             return r, appmsg_type, mid, sn, idx, ct, comment_id, version, req_id, detail_time, texts
+
+    def creat_excel_detail(self,save_path, pxlsx):
+        wb = openpyxl.Workbook()
+        wb.save(save_path + pxlsx)
+        array = ['序号', '时间', '文章名称', '阅读量', '点赞数', '转发数', '在看数', '文章链接', '评论', '评论点赞', '文章内容']
+        array_1 = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K']
+        for i in range(0, len(array)):
+            w = openpyxl.load_workbook(save_path + pxlsx)
+            sheet = w.active
+            sheet[array_1[i] + "1"] = array[i]
+            w.save(save_path + pxlsx)
+
+    def write_excel_detail(self, path, orders, times, titles, read_nums, like_nums, share_nums, looking_nums, links,
+                           comment, comment_likes, text_content):
+        wb = openpyxl.load_workbook(path)
+        sheet = wb.active
+        sheet['A' + str(orders + 1)] = orders
+        sheet['B' + str(orders + 1)] = times
+        sheet['C' + str(orders + 1)] = titles
+        sheet['D' + str(orders + 1)] = read_nums
+        sheet['E' + str(orders + 1)] = like_nums
+        sheet['F' + str(orders + 1)] = share_nums
+        sheet['G' + str(orders + 1)] = looking_nums
+        sheet['H' + str(orders + 1)] = links
+        sheet['I' + str(orders + 1)] = comment
+        sheet['J' + str(orders + 1)] = comment_likes
+        sheet['K' + str(orders + 1)] = text_content
+        wb.save(path)
+        order = orders + 1
+        return order
