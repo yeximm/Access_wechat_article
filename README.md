@@ -40,6 +40,7 @@
 ## 功能详情
 
 **get_content**
+
 1.获取文章文本内容 SaveContent
 
 - 完成网页验证
