@@ -82,5 +82,5 @@
 **如有不当之处，请联系本人，联系方式：**
 
 <p align = "center">    
-<img  src="https://imgos.cn/2024/08/14/66bc5aa192094.jpg" width="200" />
+<img  src="https://m.dyeddie.top/?explorer/share/file&hash=d7c4lCzcZUnDHhBcdEdPgQyxQ8D9w6WNQ8VXqZwWiGFXkIP2TtoEAgaEamUgI_7AAQ" width="200" />
 </p>
