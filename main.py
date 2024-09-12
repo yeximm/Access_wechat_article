@@ -24,13 +24,13 @@ def get_article_link(url):
     content = sad.get_content(url)
     if content['content_flag'] == 1:
         print('正在生成微信公众号主页链接……\n')
-        biz = re.search('__biz=(.*?)&', content['content']).group(1)
+        biz = re.search('var biz = "(.*?);', content['content']).group(1).replace('" || "', '').replace('"', '')
         names = re.search(r'var nickname.*"(.*?)".*', content['content']).group(1)  # 公众号名称
         main_url = ('https://mp.weixin.qq.com/mp/profile_ext?action=home&__biz=' + biz + '&scene=124#wechat_redirect')
         return {'link_flag': 1, 'main_url': main_url, 'names': names}
     else:
         print('未获取到文章内容，请检查链接是否正确')
-        return {'link_flag': 0,}
+        return {'link_flag': 0}
 
 
 def save_article_list(biz, uin, key, pass_ticket, pages=0):
