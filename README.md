@@ -1,12 +1,17 @@
-# Access_wechat_article
+## 微信文章获取（Access_wechat_article）
 
-# 微信文章获取
+本项目是基于Python语言的爬虫程序，支持对微信公众号文章内容获取
 
-基于Python语言的爬虫程序，支持对微信公众号文章内容获取
+目前支持 Windows / Linux 开箱即用，做的比较粗糙，望见谅！
 
-目前支持 Windows / Linux 开箱即用
+## 更新内容
 
-> 注：本项目仅供学习，请不要用于商业、违法途径，本人不对此源码造成的违法负责！
+1. **2024.9.12**更新
+   - 优化重要参数的获取方式
+   - 更新具体功能展示效果图
+2. **2024.8.29**更新
+   - 绕过微信公众号文章用代码访问时产生的验证提示（反爬虫机制）
+   - 优化文章列表与内容获取逻辑
 
 ## 主要功能介绍
 
@@ -71,7 +76,27 @@
 
 ## 功能截图
 
-![1724053373108.png](https://img.picui.cn/free/2024/08/19/66c2f77d6ee93.png)
+**功能1：**
+
+![1724053373108.png](https://m.dyeddie.top/?explorer/share/file&hash=a32dol-HaPvvzDtpRYS8iVZn6YKc9Zx9YUQ8BAXBR9XsBKg2gK9dnNKXNSpk3vwTKA)
+
+![](https://m.dyeddie.top/?explorer/share/file&hash=91393jkW0LAJbt5gk0az_OGvTz8gkUw7PWgCSNIwSTIDzayZ64aR_dm7wdMKCVRJfw)
+
+**功能2：**
+
+![](https://m.dyeddie.top/?explorer/share/file&hash=122fBMYK3xEUgjJ5L2QrFI8z_cgKEda4hy6DBeHfJkhhGAwlZvIDJf3PDgmuQWjwNw)
+
+![](https://m.dyeddie.top/?explorer/share/file&hash=d8d7GmcrMLiIEDP8yomoH6AqNScZ-CZyaFDDSgEj736PyIcA8M6zCQXB4Ji93VgChw)
+
+**功能3：**
+
+![](https://m.dyeddie.top/?explorer/share/file&hash=2bb0u1ImC8e4xoYnGiUhG5Ix_kMybAwAUCDJkM7Fyh-ZOauR5grYPACOqJXHQtAD-g)
+
+![](https://m.dyeddie.top/?explorer/share/file&hash=34d5YvkarXpFJxLX7IlIJ35NYvno19I_CAgkUi6ODtUOwvYoH4Q3_j9_6HORFKA6hw)
+
+**功能4：**
+
+![](https://m.dyeddie.top/?explorer/share/file&hash=c1a2GMLCwqr1xUpc4O0NQasQ2OOIGpbEkmF0mXqk7UlBp197Z4ZHEiVCgE8ZnyNGGA)
 
 ## 免责声明
 
@@ -82,5 +107,6 @@
 **如有不当之处，请联系本人，联系方式：**
 
 <p align = "center">    
-<img  src="https://m.dyeddie.top/?explorer/share/file&hash=d7c4lCzcZUnDHhBcdEdPgQyxQ8D9w6WNQ8VXqZwWiGFXkIP2TtoEAgaEamUgI_7AAQ" width="200" />
+<img  src="https://m.dyeddie.top/?explorer/share/file&hash=92ddotJ8TUT7AviXIknm8ey8EjCCxzxsZoIb-Ohk_rej6n7RRpVEtrRpykqiaU2emg" width="200" />
 </p>
+
