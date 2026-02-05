@@ -1,0 +1,20 @@
+[project]
+name = "Access_wechat_article"
+version = "0.1.0"
+description = "本项目是基于Python语言的爬虫程序，支持对微信公众号文章内容获取"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4==4.13.3",
+    "fake-useragent==2.0.3",
+    "jsonpath==0.82",
+    "lxml==6.0.2",
+    "openpyxl==3.1.5",
+    "pandas==2.2.3",
+    "playwright==1.57.0",
+    "requests>=2.32.5",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
