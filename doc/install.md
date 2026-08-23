@@ -93,15 +93,15 @@ uv run playwright install chromium
 .playwright-browsers/
 ```
 
-## 5. 启动桌面程序
+## 5. 启动本地 API 后端
 
 在项目根目录执行：
 
 ```bash
-uv run python main.py
+uv run python dev_server.py
 ```
 
-程序会启动本地服务并打开桌面窗口。
+程序会启动本地 FastAPI 服务。`main.py` 保留为旧命令兼容入口，也会转调同一个后端服务；桌面窗口后续由 Tauri 封装承接。
 
 
 ## 6. 安装验证
@@ -109,10 +109,10 @@ uv run python main.py
 完成安装后，执行：
 
 ```bash
-uv run python main.py
+uv run python dev_server.py
 ```
 
-桌面程序启动后，也可以在浏览器访问网页端：
+后端启动后，可以在浏览器访问网页端：
 
 ```text
 http://127.0.0.1:8766/
@@ -177,7 +177,7 @@ uv run playwright install chromium
 
 ### 网页端无法访问
 
-网页端依赖 `main.py` 启动的本地服务。请先确认桌面程序正在运行，然后访问：
+网页端依赖 `dev_server.py` 启动的本地服务。请先确认本地 API 后端正在运行，然后访问：
 
 ```text
 http://127.0.0.1:8766/
@@ -186,6 +186,6 @@ http://127.0.0.1:8766/
 如果端口被占用，关闭旧的程序进程后重新执行：
 
 ```bash
-uv run python main.py
+uv run python dev_server.py
 ```
 

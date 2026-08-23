@@ -2207,7 +2207,8 @@ def _environment_payload(config: Any) -> dict[str, str]:
         "pythonVersion": platform.python_version(),
         "mitmproxyVersion": _package_version("mitmproxy"),
         "playwrightVersion": _package_version("playwright"),
-        "pywebviewVersion": _package_version("pywebview"),
+        "desktopShell": "tauri",
+        "desktopShellStatus": "待接入",
     }
 
 

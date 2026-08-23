@@ -1,5 +1,5 @@
 import type { TaskStatus } from '../bridge/pythonApi'
-import type { EnvironmentStatus } from './pywebviewStatus'
+import type { EnvironmentStatus } from './desktopStatus'
 
 export type SettingsMetricTone = 'blue' | 'green' | 'red' | 'purple' | 'orange'
 

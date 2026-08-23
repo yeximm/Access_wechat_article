@@ -139,7 +139,6 @@ class StartupSelfCheckService:
         dependencies = [
             ("fastapi", "FastAPI", "fatal"),
             ("uvicorn", "Uvicorn", "fatal"),
-            ("webview", "pywebview", "fatal"),
             ("uiautomation", "uiautomation", "fatal"),
             ("mitmproxy", "mitmproxy", "warning"),
             ("playwright", "Playwright", "warning"),

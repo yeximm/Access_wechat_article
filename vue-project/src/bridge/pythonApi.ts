@@ -1,4 +1,4 @@
-type PywebviewStatus = {
+type DesktopStatus = {
   ok: boolean
   status: string
   webviewExists: boolean
@@ -10,7 +10,8 @@ type PywebviewStatus = {
     pythonVersion?: string
     mitmproxyVersion?: string
     playwrightVersion?: string
-    pywebviewVersion?: string
+    desktopShell?: string
+    desktopShellStatus?: string
   }
 }
 
@@ -779,16 +780,9 @@ function getJson<T>(path: string): Promise<T> {
   })
 }
 
-function parsePywebviewPayload<T>(payload: unknown): T {
-  if (typeof payload === 'string') {
-    return JSON.parse(payload) as T
-  }
-  return payload as T
-}
-
 // 统一封装 Vue 到 Python 的调用；业务接口统一走 FastAPI。
 export async function getPythonStatus() {
-  return requestHttpApi<PywebviewStatus>('/api/status')
+  return requestHttpApi<DesktopStatus>('/api/status')
 }
 
 export async function runStartupHealthChecks() {

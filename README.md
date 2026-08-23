@@ -59,7 +59,7 @@
 - **结构化研究字段** —— 围绕账号、标题、发布时间、链接、互动指标、任务状态等字段建立统一记录方式。
 - **研究流程可追踪** —— 将样本选择、材料整理、任务进度和异常状态放在同一套流程中管理。
 - **后续分析友好** —— 整理后的记录可继续用于人工编码、主题标注、统计汇总、文本处理和论文材料核对。
-- **Windows 桌面端工作台** —— 基于 WebView2，提供更直观的任务配置、运行状态和历史记录查看方式。
+- **Windows 桌面端工作台** —— 前端页面由 Vue 3 构建，后续通过 Tauri 封装为本地桌面 exe。
 
 <table>
   <tr>
@@ -113,13 +113,13 @@ $env:PLAYWRIGHT_BROWSERS_PATH=".playwright-browsers"
 uv run playwright install chromium
 ```
 
-启动桌面程序：
+启动本地 API 后端：
 
 ```bash
-uv run python main.py
+uv run python dev_server.py
 ```
 
-程序启动后，也可以在浏览器访问本地网页端：
+`main.py` 保留为旧命令兼容入口，也会转调同一个后端服务。后端启动后，可以在浏览器访问本地网页端：
 
 ```text
 http://127.0.0.1:8766/
@@ -137,7 +137,7 @@ Mermaid 图展示程序核心模块之间的调用关系。
 
 ```mermaid
 flowchart LR
-    A["Windows 桌面端工作台<br/>Vue 3 + WebView2"]
+    A["Windows 桌面端工作台<br/>Vue 3 + Tauri"]
     A --> B["FastAPI 本地服务"]
     B --> C["任务调度与运行状态"]
     C --> D["MITM 代理与请求解析"]

@@ -28,25 +28,25 @@ $env:PLAYWRIGHT_BROWSERS_PATH=".playwright-browsers"
 uv run playwright install chromium
 ```
 
-启动桌面程序：
-
-```bash
-uv run python main.py
-```
-
-程序启动后，可以通过桌面窗口使用，也可以在浏览器访问本地网页端：
-
-```text
-http://127.0.0.1:8766/
-```
-
-开发调试后端接口时可单独启动：
+启动本地 API 后端：
 
 ```bash
 uv run python dev_server.py
 ```
 
-> 注意：`dev_server.py` 只启动本地 FastAPI 服务，不打开 pywebview 桌面窗口。正常使用优先运行 `main.py`。
+`main.py` 保留为旧命令兼容入口，内部同样启动 `dev_server.py` 的 FastAPI 服务。后端启动后，可以在浏览器访问本地网页端：
+
+```text
+http://127.0.0.1:8766/
+```
+
+开发调试后端接口时仍使用同一入口：
+
+```bash
+uv run python dev_server.py
+```
+
+> 注意：当前 Python 入口只启动本地 FastAPI 服务，不再打开旧桌面窗口；桌面 exe 封装将由 Tauri 承接。
 
 ## 2. 主流程总览
 
@@ -78,7 +78,7 @@ uv run python dev_server.py
 
 ![任务编排流程图](./quick_start/9441cadc-2945-4083-8617-dc06120b7d43.png)
 
-前端、FastAPI 和 pywebview 都只是入口，最终会汇总到 `TaskManager.start_task`；真正决定能不能启动采集的是运行选项规范化、主页窗口检测和 `ProcessManager` 启动 worker 这几步。
+前端、Tauri 桌面壳和 FastAPI 都只是入口，最终会汇总到 `TaskManager.start_task`；真正决定能不能启动采集的是运行选项规范化、主页窗口检测和 `ProcessManager` 启动 worker 这几步。
 
 图中的失败/取消路径单独下沉，是因为启动失败不应该混入文章采集循环。比如主页窗口不可用、已有 worker 正在运行、启动过程被取消，都应该尽早返回状态和日志，而不是让后面的窗口点击、MITM 捕获或存储模块继续执行。
 
@@ -201,7 +201,7 @@ worker、MITM、详情解析、评论采集和存储过程都会通过事件队�
 
 相关代码：
 
-- `src/app/pywebview_app/`
+- `dev_server.py`
 - `src/config/`
 - `src/modules/proxy/`
 - `src/modules/system/`

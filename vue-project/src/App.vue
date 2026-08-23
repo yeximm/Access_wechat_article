@@ -39,9 +39,9 @@ import {
   getBrowserPreviewEnvironmentStatus,
   getEnvironmentErrorStatus,
   INITIAL_ENVIRONMENT_STATUS,
-  resolvePywebviewEnvironmentStatus,
-  type ResolvedPywebviewEnvironmentStatus,
-} from './utils/pywebviewStatus'
+  resolveDesktopEnvironmentStatus,
+  type ResolvedDesktopEnvironmentStatus,
+} from './utils/desktopStatus'
 import { formatLogMessageSegments, type LogMessageSegment } from './utils/logMessage'
 import {
   canResumeLogAutoFollow,
@@ -115,8 +115,8 @@ const shouldStickLogToBottom = ref(true)
 const lastLogScrollUserInteractionAt = ref(0)
 const githubUrl = 'https://github.com/yeximm/Access_wechat_article'
 const quickStartUrl = 'https://github.com/yeximm/Access_wechat_article/blob/main/doc/quick_start.md'
-const MAX_PYWEBVIEW_STATUS_RETRIES = 12
-const PYWEBVIEW_STATUS_RETRY_DELAY_MS = 400
+const MAX_DESKTOP_STATUS_RETRIES = 12
+const DESKTOP_STATUS_RETRY_DELAY_MS = 400
 const LOG_POLL_LIMIT = 100
 const HARDWARE_POLL_INTERVAL_MS = 500
 const taskDateFilterMode = ref<TaskDateFilterMode>('all')
@@ -169,7 +169,7 @@ const TASK_DATE_FILTER_HINTS: Record<TaskDateFilterMode, string> = {
   after: '采集指定日期之前发布的文章',
 }
 const taskDateFilterHint = computed(() => TASK_DATE_FILTER_HINTS[taskDateFilterMode.value])
-const pywebviewStatusLabel = ref('检测中')
+const desktopStatusLabel = ref('检测中')
 const environmentStatus = ref({ ...INITIAL_ENVIRONMENT_STATUS })
 const defaultHardwareStatus: HardwareStatus = {
   cpuPercent: 0,
@@ -233,8 +233,8 @@ const offlineArchiveMode = ref<OfflineArchiveMode>('standard')
 const offlineArchiveModeOpen = ref(false)
 const mainTaskSelectionDefaultsApplied = ref(false)
 const mainTaskSelectionDefaultsSignature = ref('')
-let pywebviewStatusRetryTimer: number | undefined
-let pywebviewStatusRetryCount = 0
+let desktopStatusRetryTimer: number | undefined
+let desktopStatusRetryCount = 0
 let taskPollingTimer: number | undefined
 let hardwarePollingTimer: number | undefined
 let hardwareStatusErrorReported = false
@@ -632,7 +632,7 @@ const envItems = computed(() => [
   { name: 'Version', value: environmentStatus.value.appVersion, icon: 'fa-solid fa-cube' },
   { name: 'Python', value: environmentStatus.value.pythonVersion, icon: 'fa-brands fa-python' },
   { name: 'System', value: environmentStatus.value.systemLabel, icon: 'fa-brands fa-windows' },
-  { name: 'PyWebView', value: environmentStatus.value.pywebviewVersion, icon: 'fa-regular fa-window-maximize' },
+  { name: 'Tauri', value: environmentStatus.value.desktopShellStatus, icon: 'fa-regular fa-window-maximize' },
   { name: 'MITMproxy', value: environmentStatus.value.mitmproxyVersion, icon: 'fa-solid fa-shield-halved' },
   { name: 'Playwright', value: environmentStatus.value.playwrightVersion, icon: 'fa-solid fa-window-restore' },
 ])
@@ -1091,52 +1091,46 @@ function handleLogTableScroll(event: Event) {
   scheduleLogAutoFollowResume()
 }
 
-function stopPywebviewStatusRetry() {
-  window.clearTimeout(pywebviewStatusRetryTimer)
-  pywebviewStatusRetryTimer = undefined
+function stopDesktopStatusRetry() {
+  window.clearTimeout(desktopStatusRetryTimer)
+  desktopStatusRetryTimer = undefined
 }
 
-function applyPywebviewEnvironmentStatus(resolved: ResolvedPywebviewEnvironmentStatus) {
-  pywebviewStatusLabel.value = resolved.pywebviewStatusLabel
+function applyDesktopEnvironmentStatus(resolved: ResolvedDesktopEnvironmentStatus) {
+  desktopStatusLabel.value = resolved.desktopStatusLabel
   environmentStatus.value = resolved.environmentStatus
 }
 
-function schedulePywebviewStatusRetry() {
-  stopPywebviewStatusRetry()
+function scheduleDesktopStatusRetry() {
+  stopDesktopStatusRetry()
 
-  if (pywebviewStatusRetryCount >= MAX_PYWEBVIEW_STATUS_RETRIES) {
-    applyPywebviewEnvironmentStatus(getBrowserPreviewEnvironmentStatus())
+  if (desktopStatusRetryCount >= MAX_DESKTOP_STATUS_RETRIES) {
+    applyDesktopEnvironmentStatus(getBrowserPreviewEnvironmentStatus())
     return
   }
 
-  pywebviewStatusRetryCount += 1
-  pywebviewStatusRetryTimer = window.setTimeout(() => {
+  desktopStatusRetryCount += 1
+  desktopStatusRetryTimer = window.setTimeout(() => {
     refreshPythonStatus()
-  }, PYWEBVIEW_STATUS_RETRY_DELAY_MS)
+  }, DESKTOP_STATUS_RETRY_DELAY_MS)
 }
 
 async function refreshPythonStatus() {
   try {
     const status = await getPythonStatus()
-    const resolved = resolvePywebviewEnvironmentStatus(status)
-    applyPywebviewEnvironmentStatus(resolved)
+    const resolved = resolveDesktopEnvironmentStatus(status)
+    applyDesktopEnvironmentStatus(resolved)
 
     if (resolved.shouldRetry) {
-      schedulePywebviewStatusRetry()
+      scheduleDesktopStatusRetry()
       return
     }
 
-    stopPywebviewStatusRetry()
+    stopDesktopStatusRetry()
   } catch {
-    stopPywebviewStatusRetry()
-    applyPywebviewEnvironmentStatus(getEnvironmentErrorStatus())
+    stopDesktopStatusRetry()
+    applyDesktopEnvironmentStatus(getEnvironmentErrorStatus())
   }
-}
-
-function handlePywebviewReady() {
-  stopPywebviewStatusRetry()
-  pywebviewStatusRetryCount = 0
-  refreshPythonStatus()
 }
 
 function stopTaskPolling() {
@@ -1278,7 +1272,6 @@ async function handleOpenLogFolder() {
 
 onMounted(async () => {
   markHomeDetectionStarting()
-  window.addEventListener('pywebviewready', handlePywebviewReady)
   refreshPythonStatus()
   refreshArchiveSummary()
   startUptimeTimer()
@@ -1292,12 +1285,11 @@ watch([systemLogRows, articleTaskLogRows], async () => {
   await scrollLogTableToLatest()
 }, { flush: 'post' })
 onBeforeUnmount(() => {
-  stopPywebviewStatusRetry()
+  stopDesktopStatusRetry()
   stopLogAutoFollowTimer()
   stopTaskPolling()
   stopHardwarePolling()
   stopUptimeTimer()
-  window.removeEventListener('pywebviewready', handlePywebviewReady)
 })
 </script>
 

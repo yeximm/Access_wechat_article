@@ -278,7 +278,7 @@ export const settingsMetrics: MetricCard[] = [
 export const environmentItems = [
   ['Python', '3.10.11', 'fa-brands fa-python'],
   ['mitmproxy', '11.0.2', 'fa-solid fa-shield-halved'],
-  ['PyWebView', '6.2.1', 'fa-regular fa-window-maximize'],
+  ['Tauri', '待接入', 'fa-regular fa-window-maximize'],
   ['System', 'Win 11 x64', 'fa-brands fa-windows'],
   ['代理状态', '已连接', 'fa-solid fa-plug-circle-check'],
   ['CA 证书', '已安装', 'fa-solid fa-certificate'],

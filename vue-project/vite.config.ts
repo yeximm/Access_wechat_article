@@ -9,7 +9,7 @@ function removeImpeccableLiveScript() {
     name: 'remove-impeccable-live-script',
     apply: 'build' as const,
     transformIndexHtml(html: string) {
-      // 构建静态页面时删除 live 调试脚本，避免 pywebview 额外请求 localhost:8400。
+      // 构建静态页面时删除 live 调试脚本，避免桌面壳额外请求 localhost:8400。
       return html.replace(
         /\s*<!-- impeccable-live-start -->[\s\S]*?<!-- impeccable-live-end -->/g,
         '',

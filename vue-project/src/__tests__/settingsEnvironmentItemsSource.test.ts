@@ -14,7 +14,7 @@ test('系统配置页运行环境直接使用 App.vue 的 envItems，不再单�
   assert.match(appVue, /name:\s*'Version'/)
   assert.match(appVue, /name:\s*'Python'/)
   assert.match(appVue, /name:\s*'System'/)
-  assert.match(appVue, /name:\s*'PyWebView'/)
+  assert.match(appVue, /name:\s*'Tauri'/)
   assert.match(appVue, /name:\s*'MITMproxy'/)
   assert.match(appVue, /name:\s*'Playwright'/)
   assert.match(appVue, /<SettingsPage[\s\S]*:environment-items="envItems"/)

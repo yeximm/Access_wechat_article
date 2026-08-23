@@ -60,7 +60,7 @@ Contributions are welcome in these areas:
 - **Structured research fields**: Records account name, title, publication time, short link, engagement metrics, task status, and related metadata.
 - **Traceable collection process**: Keeps sample selection, material organization, task progress, and failure states in one local workflow.
 - **Analysis-ready records**: Prepares collected materials for manual coding, topic labeling, statistical summaries, text processing, and paper writing.
-- **Windows desktop workbench**: Uses WebView2 to provide a visual interface for task configuration, status monitoring, history records, and system settings.
+- **Windows desktop workbench**: Builds the interface with Vue 3 and is being prepared for Tauri desktop packaging.
 
 <table>
   <tr>
@@ -114,13 +114,13 @@ $env:PLAYWRIGHT_BROWSERS_PATH=".playwright-browsers"
 uv run playwright install chromium
 ```
 
-Start the desktop application:
+Start the local API backend:
 
 ```bash
-uv run python main.py
+uv run python dev_server.py
 ```
 
-After startup, the local web interface is also available at:
+`main.py` is kept as a compatibility entrypoint and delegates to the same backend service. After startup, the local web interface is also available at:
 
 ```text
 http://127.0.0.1:8766/
@@ -136,7 +136,7 @@ This section shows the overall runtime flow. The Mermaid diagram describes how t
 
 ```mermaid
 flowchart LR
-    A["Windows Desktop Workbench<br/>Vue 3 + WebView2"]
+    A["Windows Desktop Workbench<br/>Vue 3 + Tauri"]
     A --> B["FastAPI Local Service"]
     B --> C["Task Scheduling And Runtime Status"]
     C --> D["MITM Proxy And Request Parsing"]

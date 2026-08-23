@@ -98,20 +98,20 @@ After installation, the project root should contain:
 Run from the project root:
 
 ```bash
-uv run python main.py
+uv run python dev_server.py
 ```
 
-The program starts the local service and opens the desktop window.
+The program starts the local FastAPI service. `main.py` remains as a compatibility entrypoint and delegates to the same backend service; the desktop window will be handled by the Tauri packaging path.
 
 ## 6. Verify Installation
 
 After installation, run:
 
 ```bash
-uv run python main.py
+uv run python dev_server.py
 ```
 
-After the desktop program starts, you can also open the local web interface in your browser:
+After the backend starts, you can also open the local web interface in your browser:
 
 ```text
 http://127.0.0.1:8766/
@@ -175,7 +175,7 @@ Make sure `.playwright-browsers/` exists in the project root.
 
 ### Local Web Interface Cannot Be Opened
 
-The local web interface depends on the service started by `main.py`. Make sure the desktop application is running, then visit:
+The local web interface depends on the service started by `dev_server.py`. Make sure the local API backend is running, then visit:
 
 ```text
 http://127.0.0.1:8766/
@@ -184,5 +184,5 @@ http://127.0.0.1:8766/
 If the port is occupied, close the old process and run again:
 
 ```bash
-uv run python main.py
+uv run python dev_server.py
 ```

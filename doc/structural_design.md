@@ -480,7 +480,7 @@ src/
 
 ```text
 app -> services
-webview -> app API / pywebview bridge
+webview -> app API / Tauri desktop shell
 services -> modules / storage / config / domain
 modules -> domain / config
 storage -> domain
@@ -560,20 +560,20 @@ ApiRequest
 
 ## desktop
 
-- `webview_api.py`
-  - 暴露 pywebview 桌面壳能力。
-  - 只保留目录选择、打开目录、原生窗口控制等桌面专属能力。
+- Tauri 桌面壳
+  - 负责加载 Vue 构建产物或开发服务器页面。
+  - 只承接桌面窗口、安装包和必要的系统级桌面能力。
   - 业务能力优先走 FastAPI `/api/...`，避免 API 重复。
 
 # webview
 
-`webview` 必须保留，它放的是前端构建后的静态页面文件，用于 pywebview 或 FastAPI 静态加载。
+`webview` 必须保留，它放的是前端构建后的静态页面文件，用于 FastAPI 静态加载，也可作为 Tauri 打包时的前端产物来源。
 
 这一层不是前端源码目录，也不是后端业务目录。前端源码仍放在项目根目录的 `vue-project/src/`。修改页面时先改 `vue-project/src/`，再构建输出到 `src/webview/`。
 
 - `index.html`
   - 前端构建后的入口页面。
-  - 由 pywebview 或 FastAPI 返回给桌面端加载。
+  - 由 FastAPI 返回给浏览器预览，也可由 Tauri 打包后加载。
 
 - `assets/`
   - 前端构建后的 JS、CSS、图片等静态资源。
