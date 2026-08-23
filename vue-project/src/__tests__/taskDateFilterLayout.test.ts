@@ -34,8 +34,8 @@ test('指定记录总量卡片保留标题并以下拉菜单提供四种日期�
   assert.match(appVue, /const taskDateFilterMode = ref<TaskDateFilterMode>\('all'\)/)
   assert.match(appVue, /\{ label: '不限日期', value: 'all' \}/)
   assert.match(appVue, /\{ label: '指定任务日期范围', value: 'range' \}/)
-  assert.match(appVue, /\{ label: '截止日期（最晚发布）', value: 'before' \}/)
-  assert.match(appVue, /\{ label: '起始日期（最早发布）', value: 'after' \}/)
+  assert.match(appVue, /\{ label: '截止日期 \(不早于\)', value: 'before' \}/)
+  assert.match(appVue, /\{ label: '起始日期 \(不晚于\)', value: 'after' \}/)
 
   const card = appVue.match(
     /<article class="task-card task-card-volume panel">[\s\S]*?<\/article>/,
@@ -267,10 +267,12 @@ test('task labels use Ant Design question icons without circular backgrounds', (
   assert.match(taskRowRule.groups.body, /grid-template-columns:\s*88px minmax\(0, 1fr\);/)
 })
 
-test('日期筛选暂不写入主流程后端参数', () => {
+test('日期筛选写入主流程后端参数', () => {
   const builder = appVue.match(/function buildTaskRunOptions\(\): TaskRunOptions \{[\s\S]*?\n\}/)
   assert.ok(builder)
-  assert.doesNotMatch(builder[0], /taskDateFilterMode|taskStartDate|taskEndDate/)
+  assert.match(builder[0], /dateFilterMode/)
+  assert.match(builder[0], /startDate/)
+  assert.match(builder[0], /endDate/)
 })
 
 test('新增设置标签与获取内容选项使用相同字号', () => {

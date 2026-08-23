@@ -62,7 +62,7 @@ export type TaskStatus = {
   home?: HomeSnapshot
   runtimeState?: TaskRuntimeState
   auth?: AuthStatus
-  traffic?: TrafficStatus
+  hardware?: HardwareStatus
   proxy?: {
     host: string
     port: number
@@ -179,20 +179,24 @@ export type StartupSelfCheckResult = {
   statePath: string
 }
 
-export type TrafficHistoryPoint = {
-  timestamp: number
-  time: string
-  uploadBytesPerSecond: number
-  downloadBytesPerSecond: number
+export type HardwareHistoryPoint = {
+  timestamp: number | string
+  cpuPercent?: number
+  memoryPercent?: number
+  memoryUsedBytes?: number
 }
 
-export type TrafficStatus = {
-  uploadBytesPerSecond: number
-  downloadBytesPerSecond: number
-  uploadLabel: string
-  downloadLabel: string
-  windowSeconds: number
-  history: TrafficHistoryPoint[]
+export type HardwareStatus = {
+  cpuPercent: number
+  memoryPercent: number
+  memoryUsedBytes: number
+  cpuLabel: string
+  memoryLabel: string
+  processCount?: number
+  historySampleCount?: number
+  sampleIntervalSeconds?: number
+  history: HardwareHistoryPoint[]
+  updatedAt?: string
 }
 
 export type HomeSnapshot = {
@@ -217,11 +221,15 @@ export type AuthStatus = {
 
 export type TaskRunOptions = {
   recordLimit: number
+  dateFilterMode: 'all' | 'range' | 'before' | 'after'
+  startDate?: string
+  endDate?: string
   selections: {
     articleDetail: boolean
     offlineArchive?: boolean
     commentInfo: boolean
     skipCollectedRecords: boolean
+    offlineArchiveMode?: 'standard' | 'beta'
   }
 }
 
@@ -246,6 +254,12 @@ export type TaskLogItem = {
   message: string
   source: string
   createdAt: string
+  channel?: 'system' | 'main_flow' | 'article_task' | string
+  phase?: string
+  taskIndex?: number | string
+  articleTaskId?: string
+  articleTitle?: string
+  errorId?: string
 }
 
 type TaskLogsResult = {
@@ -819,6 +833,10 @@ export async function disableSystemProxy() {
 
 export async function getTaskStatus() {
   return requestHttpApi<TaskStatus>('/api/task/status')
+}
+
+export async function getHardwareStatus() {
+  return requestHttpApi<HardwareStatus>('/api/runtime/hardware')
 }
 
 export async function getTaskLogs(limit = 100) {

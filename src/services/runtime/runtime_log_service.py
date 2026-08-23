@@ -37,7 +37,7 @@ class RuntimeLogService:
         self.summary_log_path = self.log_dir / SUMMARY_LOG_FILE_NAME
         self.detail_log_path = self.log_dir / DETAIL_LOG_FILE_NAME
         self._level = _normalize_level(level)
-        self._summary_entries: deque[dict[str, str]] = deque(
+        self._summary_entries: deque[dict[str, Any]] = deque(
             maxlen=max(1, int(summary_limit))
         )
         self._redactions = tuple(
@@ -85,14 +85,24 @@ class RuntimeLogService:
         message: str,
         *,
         source: str = "runtime",
+        channel: str | None = None,
+        phase: str | None = None,
+        task_index: int | str | None = None,
+        article_task_id: str | None = None,
+        article_title: str | None = None,
         context: Mapping[str, Any] | None = None,
         exception: BaseException | None = None,
         error_id: str | None = None,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         return self._write(
             level,
             message,
             source=source,
+            channel=channel,
+            phase=phase,
+            task_index=task_index,
+            article_task_id=article_task_id,
+            article_title=article_title,
             context=context,
             exception=exception,
             error_id=error_id,
@@ -106,14 +116,24 @@ class RuntimeLogService:
         message: str,
         *,
         source: str = "runtime",
+        channel: str | None = None,
+        phase: str | None = None,
+        task_index: int | str | None = None,
+        article_task_id: str | None = None,
+        article_title: str | None = None,
         context: Mapping[str, Any] | None = None,
         exception: BaseException | None = None,
         error_id: str | None = None,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         return self._write(
             level,
             message,
             source=source,
+            channel=channel,
+            phase=phase,
+            task_index=task_index,
+            article_task_id=article_task_id,
+            article_title=article_title,
             context=context,
             exception=exception,
             error_id=error_id,
@@ -126,21 +146,31 @@ class RuntimeLogService:
         message: str,
         *,
         source: str = "runtime",
+        channel: str | None = None,
+        phase: str | None = None,
+        task_index: int | str | None = None,
+        article_task_id: str | None = None,
+        article_title: str | None = None,
         context: Mapping[str, Any] | None = None,
         exception: BaseException | None = None,
         summary: bool = True,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         return self._write(
             "ERROR",
             message,
             source=source,
+            channel=channel,
+            phase=phase,
+            task_index=task_index,
+            article_task_id=article_task_id,
+            article_title=article_title,
             context=context,
             exception=exception,
             summary=summary,
             generate_error_id=True,
         )
 
-    def recent_summary(self, limit: int = DEFAULT_SUMMARY_LIMIT) -> list[dict[str, str]]:
+    def recent_summary(self, limit: int = DEFAULT_SUMMARY_LIMIT) -> list[dict[str, Any]]:
         safe_limit = max(1, min(int(limit), self._summary_entries.maxlen or 1))
         with self._lock:
             return [dict(item) for item in list(self._summary_entries)[-safe_limit:]]
@@ -162,12 +192,17 @@ class RuntimeLogService:
         message: str,
         *,
         source: str,
+        channel: str | None,
+        phase: str | None,
+        task_index: int | str | None,
+        article_task_id: str | None,
+        article_title: str | None,
         context: Mapping[str, Any] | None,
         exception: BaseException | None,
         error_id: str | None = None,
         summary: bool,
         generate_error_id: bool,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         normalized_level = _normalize_level(level)
         created_at = self._now()
         with self._lock:
@@ -186,6 +221,12 @@ class RuntimeLogService:
                 "source": str(source or "runtime"),
                 "createdAt": created_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "errorId": resolved_error_id or "",
+                # channel/phase/task 字段只服务前台展示；旧调用不传时默认进左侧软件活动栏。
+                "channel": _normalize_channel(channel),
+                "phase": str(phase or "").strip(),
+                "taskIndex": _normalize_task_index(task_index),
+                "articleTaskId": str(article_task_id or "").strip(),
+                "articleTitle": self._sanitize(str(article_title or "").strip()),
             }
             if not self._is_enabled(normalized_level):
                 return entry
@@ -284,6 +325,22 @@ def _logging_level(level: str) -> int:
         "WARN": logging.WARNING,
         "ERROR": logging.ERROR,
     }[_normalize_level(level)]
+
+
+def _normalize_channel(channel: str | None) -> str:
+    """前台日志分栏字段：未知值统一归到软件活动栏，避免日志丢失。"""
+
+    normalized = str(channel or "system").strip().lower().replace("-", "_")
+    return normalized if normalized in {"system", "main_flow", "article_task"} else "system"
+
+
+def _normalize_task_index(value: int | str | None) -> int | str:
+    if value is None or value == "":
+        return ""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return str(value)
 
 
 class _RedactingFormatter(logging.Formatter):

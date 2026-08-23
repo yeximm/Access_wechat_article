@@ -55,6 +55,7 @@ class CommentCollectData:
     asset_count: int = 0
     asset_dir: Path | None = None
     html_comment_count: int | None = None
+    download_bytes: int = 0
 
 
 class CommentCollectService:
@@ -327,6 +328,7 @@ class CommentCollectService:
                     asset_count=0,
                     asset_dir=None,
                     html_comment_count=html_comment_count,
+                    download_bytes=0,
                 ),
                 duration_seconds=duration,
             )
@@ -450,6 +452,7 @@ class CommentCollectService:
                     asset_count=asset_count,
                     asset_dir=None,
                     html_comment_count=html_comment_count,
+                    download_bytes=fetched.download_bytes,
                 ),
                 duration_seconds=duration,
             )

@@ -184,11 +184,19 @@ class StartupSelfCheckService:
 
     def _check_storage_paths(self, config: Any) -> list[dict[str, Any]]:
         storage = getattr(config, "storage", None)
+        temp_dir = getattr(storage, "temp_dir", None)
+        runtime_dir = Path(temp_dir).parent / "runtime" if temp_dir is not None else None
         paths = [
             ("article_storage_root", "文章存储目录", getattr(storage, "article_storage_root", None)),
             ("db_dir", "数据库目录", getattr(storage, "db_dir", None)),
             ("temp_dir", "临时文件目录", getattr(storage, "temp_dir", None)),
             ("log_dir", "日志目录", getattr(storage, "log_dir", None)),
+            ("runtime_dir", "运行时状态目录", runtime_dir),
+            (
+                "huey_queue_dir",
+                "Huey 临时队列目录",
+                runtime_dir / "huey" if runtime_dir is not None else None,
+            ),
         ]
         return [self._check_writable_directory(key, label, path) for key, label, path in paths]
 

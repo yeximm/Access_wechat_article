@@ -12,8 +12,9 @@ test('任务启动和运行期间锁定数量及内容设置', () => {
   assert.doesNotMatch(appVue, /function toggleDownloadOption\(/)
 })
 
-test('主服务按钮解绑后不再保留启动失败回滚分支', () => {
-  assert.doesNotMatch(appVue, /async function handleStartTask\(/)
-  assert.doesNotMatch(appVue, /启动采集任务失败/)
-  assert.doesNotMatch(appVue, /await startTask\(/)
+test('主服务启动失败时保留可见错误并恢复可编辑状态', () => {
+  assert.match(appVue, /async function handleStartTask\(/)
+  assert.match(appVue, /启动采集任务失败/)
+  assert.match(appVue, /await startTask\(/)
+  assert.match(appVue, /const status = await getTaskStatus\(\)[\s\S]*handleTaskStatusChanged\(status\)/)
 })

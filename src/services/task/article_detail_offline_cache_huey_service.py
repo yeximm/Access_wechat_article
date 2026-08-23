@@ -21,6 +21,7 @@ from src.services.runtime.database_write_coordinator import DatabaseWriteCoordin
 from src.services.task.initial_content_storage_huey_service import (
     InitialContentStorageHueyService,
     InitialContentStorageTaskOptions,
+    _saved_article_from_payload,
 )
 from src.storage.repositories.article_repository import ArticleRepository
 from src.storage.repositories.fetch_history_repository import (
@@ -51,6 +52,7 @@ class ArticleDetailOfflineCacheHueyService(InitialContentStorageHueyService):
         session_id: str | None = None,
         job_id_factory: Callable[[], str] | None = None,
         now: Callable[[], datetime] = datetime.now,
+        worker_count: int = 1,
     ) -> None:
         super().__init__(
             temp_root=temp_root,
@@ -73,6 +75,8 @@ class ArticleDetailOfflineCacheHueyService(InitialContentStorageHueyService):
             wait_message_with_card="已读取首篇文章卡片，正在等待Huey执行单篇离线缓存任务...",
             wait_message_without_card="正在等待Huey执行单篇离线缓存任务...",
             extra_public_options={"archiveOfflineContent": True},
+            worker_count=worker_count,
+            post_phase="offline",
         )
         self._offline_cache_process_control = (
             offline_cache_process_control or OfflineCacheProcessControlService()
@@ -135,6 +139,45 @@ class ArticleDetailOfflineCacheHueyService(InitialContentStorageHueyService):
             "statefulOfflineCache": bool(stateful_offline_cache),
         }
         return initial
+
+    def _run_post_task(
+        self,
+        *,
+        job_id: str,
+        article: Mapping[str, Any],
+        update: Callable[[dict[str, Any]], None],
+    ) -> dict[str, Any]:
+        started_at = time.monotonic()
+        saved = _saved_article_from_payload(article)
+        records = [dict(item) for item in article.get("records", []) if isinstance(item, Mapping)]
+        account_name = str(article.get("accountName") or "").strip()
+        capture_type = str(article.get("captureType") or "none")
+        result = self._run_offline_cache_process(
+            job_id=job_id,
+            saved=saved,
+            items=[],
+            update=update,
+            base_result={
+                "phase": "offline",
+                "records": records,
+                "accountName": account_name,
+                "captureType": capture_type,
+            },
+            records=records,
+            account_name=account_name,
+            capture_type=capture_type,
+            started_at=started_at,
+            stateful_offline_cache=bool(article.get("statefulOfflineCache") or article.get("stateful_offline_cache")),
+        )
+        success = bool(result.get("ok")) and str(result.get("status") or "").lower() in {"success", "completed"}
+        return {
+            **dict(result),
+            "ok": success,
+            "status": "success" if success else "failed",
+            "phase": "offline",
+            "offlineStatus": "success" if success else "failed",
+            "totalSeconds": round(time.monotonic() - started_at, 3),
+        }
 
     def _build_save_success_result(
         self,
@@ -255,6 +298,7 @@ class ArticleDetailOfflineCacheHueyService(InitialContentStorageHueyService):
                 attempt_id=attempt_id,
                 payload=payload,
             )
+            self._register_active_attempt(job_id, attempt)
             items.append(
                 {
                     "label": "启动离线缓存子进程",
@@ -292,6 +336,8 @@ class ArticleDetailOfflineCacheHueyService(InitialContentStorageHueyService):
             )
 
             def on_progress(event: dict[str, Any]) -> None:
+                if event.get("internal"):
+                    return
                 items.append(_event_item(event))
                 update(
                     {
@@ -414,6 +460,7 @@ class ArticleDetailOfflineCacheHueyService(InitialContentStorageHueyService):
                 return {**raw_result, "ok": False, "status": "failed", "message": message}
             return {"ok": False, "status": "failed", "message": f"离线缓存失败：{message}"}
         finally:
+            self._unregister_active_attempt(job_id, attempt)
             if attempt_root.exists():
                 shutil.rmtree(attempt_root, ignore_errors=True)
 

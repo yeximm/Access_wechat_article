@@ -35,6 +35,7 @@ from src.config.config_loader import build_app_config, load_config_mapping
 from src.domain.enums import TaskStatus
 from src.domain.models import TaskCommand
 from src.modules.window.article_date_filter import ArticleDateFilter
+from src.modules.processes.process_launcher import set_process_observer
 from src.modules.proxy.capture_buffer import CaptureBuffer
 from src.modules.proxy.mitmproxy_listener import MitmproxyListener, MitmproxyListenerError
 from src.modules.proxy.proxy_state import ProxySnapshot, proxy_points_to
@@ -51,6 +52,7 @@ from src.services.capture.window_runtime_factory import WindowRuntimeFactory
 from src.services.history.history_query_service import HistoryQueryService
 from src.services.history.history_clear_service import HistoryClearService
 from src.services.main_flow.main_flow_models import MainFlowCommand
+from src.services.main_flow.main_flow_factory import build_main_flow_service
 from src.services.main_flow.main_flow_service import (
     MainFlowConflictError,
     MainFlowService,
@@ -58,8 +60,10 @@ from src.services.main_flow.main_flow_service import (
 from src.services.runtime.database_init_service import DatabaseInitService
 from src.services.runtime.article_card_probe_service import ArticleCardProbeService
 from src.services.runtime.runtime_cache_clear_service import RuntimeCacheClearService
+from src.services.runtime.runtime_directory_service import RuntimeDirectoryService
 from src.services.runtime.runtime_log_service import RuntimeLogService
 from src.services.runtime.startup_self_check_service import StartupSelfCheckService
+from src.services.runtime.process_tree_resource_monitor import ProcessTreeResourceMonitor
 from src.services.runtime.task_runtime_state import TaskRuntimeTracker
 from src.services.runtime.window_diagnostic_service import (
     WINDOW_DIAGNOSTIC_ACTIONS,
@@ -81,6 +85,7 @@ from src.services.task.article_detail_comments_huey_service import (
 from src.services.task.article_detail_offline_cache_huey_service import (
     ArticleDetailOfflineCacheHueyService,
 )
+from src.services.task.huey_runtime_queue import reset_runtime_huey_queue_dir
 from src.services.task.task_manager import TaskConflictError
 from src.storage.sqlite.connection import sqlite_connection
 
@@ -101,9 +106,10 @@ class DevBackendContext:
     task_manager: Any
     main_flow_service: MainFlowService | Any | None = None
     runtime_logger: RuntimeLogService | Any | None = None
+    system_resource_monitor: Any | None = None
     started_at: datetime = field(default_factory=datetime.now)
     active_task_id: str | None = None
-    logs: list[dict[str, str]] = field(default_factory=list)
+    logs: list[dict[str, Any]] = field(default_factory=list)
     config_mapping: dict[str, Any] | None = None
     directory_selector: Any | None = None
     command_runner: Any | None = None
@@ -115,6 +121,8 @@ class DevBackendContext:
     window_click_flow_huey_service: Any | None = None
     article_detail_card_probe_service: Any | None = None
     article_detail_huey_service: Any | None = None
+    main_flow_foreground_huey_service: Any | None = None
+    main_flow_detail_huey_service: Any | None = None
     diagnostic_mitm_listener: Any | None = None
     diagnostic_mitm_started_at: float = 0.0
     diagnostic_system_proxy_snapshot: ProxySnapshot | None = None
@@ -134,6 +142,11 @@ class DevBackendContext:
         source: str = "dev_server",
         *,
         summary: bool = False,
+        channel: str | None = None,
+        phase: str | None = None,
+        task_index: int | str | None = None,
+        article_task_id: str | None = None,
+        article_title: str | None = None,
         context: dict[str, Any] | None = None,
         exception: BaseException | None = None,
     ) -> None:
@@ -142,6 +155,11 @@ class DevBackendContext:
                 self.runtime_logger.write_error(
                     message,
                     source=source,
+                    channel=channel,
+                    phase=phase,
+                    task_index=task_index,
+                    article_task_id=article_task_id,
+                    article_title=article_title,
                     context=context,
                     exception=exception,
                     summary=summary,
@@ -151,6 +169,11 @@ class DevBackendContext:
                     level,
                     message,
                     source=source,
+                    channel=channel,
+                    phase=phase,
+                    task_index=task_index,
+                    article_task_id=article_task_id,
+                    article_title=article_title,
                     context=context,
                 )
             else:
@@ -158,6 +181,11 @@ class DevBackendContext:
                     level,
                     message,
                     source=source,
+                    channel=channel,
+                    phase=phase,
+                    task_index=task_index,
+                    article_task_id=article_task_id,
+                    article_title=article_title,
                     context=context,
                     exception=exception,
                 )
@@ -169,11 +197,16 @@ class DevBackendContext:
                     "message": message,
                     "source": source,
                     "createdAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "channel": channel or "system",
+                    "phase": phase or "",
+                    "taskIndex": task_index or "",
+                    "articleTaskId": article_task_id or "",
+                    "articleTitle": article_title or "",
                 }
             )
             del self.logs[:-100]
 
-    def recent_summary_logs(self, limit: int = 100) -> list[dict[str, str]]:
+    def recent_summary_logs(self, limit: int = 100) -> list[dict[str, Any]]:
         if self.runtime_logger is not None:
             return self.runtime_logger.recent_summary(limit)
         safe_limit = max(1, min(int(limit), 100))
@@ -313,12 +346,116 @@ def create_dev_backend(
     """按新结构装配开发期 FastAPI 后端，并在启动阶段初始化数据库。"""
     root = Path(project_root or Path(__file__).resolve().parent).resolve()
     runtime = load_application_runtime(project_root=root, config_path=config_path)
+    RuntimeDirectoryService().prepare(runtime.config)
     db_path = DatabaseInitService(project_root=root).initialize(runtime.config)
     runtime_logger = RuntimeLogService(
         log_dir=runtime.config.storage.log_dir,
         level=runtime.config.runtime.log_level,
         redactions={str(db_path): db_path.name},
     )
+    # Huey 的 SQLite 队列只保存当前进程运行态任务，启动时清理旧队列，
+    # 并放在 data/runtime/huey，避免被“清理缓存”误删 data/tmp 时破坏。
+    reset_runtime_huey_queue_dir(runtime.config.storage.temp_dir)
+    # 诊断工具和主服务使用独立的详情队列；两者仍通过服务内部的进程级
+    # foreground lease 互斥接管主页和全局代理。
+    initial_content_service = InitialContentStorageHueyService(
+        temp_root=runtime.config.storage.temp_dir,
+        config=runtime.config,
+        window_factory=runtime.window_factory,
+        capture_factory=runtime.capture_factory,
+        database_path=db_path,
+        worker_count=1,
+    )
+    main_flow_foreground_service = InitialContentStorageHueyService(
+        temp_root=runtime.config.storage.temp_dir,
+        config=runtime.config,
+        window_factory=runtime.window_factory,
+        capture_factory=runtime.capture_factory,
+        database_path=db_path,
+        write_coordinator=runtime.database_write_coordinator,
+        worker_count=1,
+        job_prefix="main-flow-foreground",
+        queue_name="main-flow-foreground",
+        task_name="MainFlowForegroundTask",
+        action="main-flow-foreground",
+        title="主服务单篇前台结果",
+        flow_label="主服务单篇前台捕获",
+    )
+    main_flow_detail_service = InitialContentStorageHueyService(
+        temp_root=runtime.config.storage.temp_dir,
+        config=runtime.config,
+        window_factory=runtime.window_factory,
+        capture_factory=runtime.capture_factory,
+        database_path=db_path,
+        write_coordinator=runtime.database_write_coordinator,
+        worker_count=2,
+        job_prefix="main-flow-detail",
+        queue_name="main-flow-detail",
+        task_name="MainFlowDetailTask",
+        action="main-flow-detail",
+        title="主服务单篇详情结果",
+        flow_label="主服务单篇详情",
+    )
+    # 主服务和诊断工具使用不同的 Huey 队列；两套 service 可以共享运行时
+    # DatabaseWriteCoordinator，但不能共享队列、任务记录或关闭生命周期。
+    main_flow_comments_service = ArticleDetailCommentsHueyService(
+        temp_root=runtime.config.storage.temp_dir,
+        config=runtime.config,
+        window_factory=runtime.window_factory,
+        capture_factory=runtime.capture_factory,
+        database_path=db_path,
+        write_coordinator=runtime.database_write_coordinator,
+        worker_count=runtime.config.comment.max_concurrent_processes,
+    )
+    main_flow_offline_service = ArticleDetailOfflineCacheHueyService(
+        temp_root=runtime.config.storage.temp_dir,
+        config=runtime.config,
+        window_factory=runtime.window_factory,
+        capture_factory=runtime.capture_factory,
+        database_path=db_path,
+        browser_cache_dir=root / ".playwright-browsers",
+        write_coordinator=runtime.database_write_coordinator,
+        worker_count=runtime.config.offline_cache.max_concurrent_processes,
+    )
+    diagnostic_comments_service = ArticleDetailCommentsHueyService(
+        temp_root=runtime.config.storage.temp_dir,
+        config=runtime.config,
+        window_factory=runtime.window_factory,
+        capture_factory=runtime.capture_factory,
+        database_path=db_path,
+        write_coordinator=runtime.database_write_coordinator,
+        worker_count=1,
+    )
+    diagnostic_offline_service = ArticleDetailOfflineCacheHueyService(
+        temp_root=runtime.config.storage.temp_dir,
+        config=runtime.config,
+        window_factory=runtime.window_factory,
+        capture_factory=runtime.capture_factory,
+        database_path=db_path,
+        browser_cache_dir=root / ".playwright-browsers",
+        write_coordinator=runtime.database_write_coordinator,
+        worker_count=1,
+    )
+    main_flow_service, _main_flow_dispatcher = build_main_flow_service(
+        project_root=root,
+        config=runtime.config,
+        db_path=db_path,
+        storage_root=runtime.config.storage.article_storage_root,
+        temp_root=runtime.config.storage.temp_dir,
+        window_factory=runtime.window_factory,
+        foreground_service=main_flow_foreground_service,
+        detail_service=main_flow_detail_service,
+        comments_service=main_flow_comments_service,
+        offline_service=main_flow_offline_service,
+        runtime_logger=runtime_logger,
+    )
+    # 运行状态区只展示当前软件进程树的资源占用；后台独立采样，前端读取时不再临时扫整机。
+    resource_monitor = ProcessTreeResourceMonitor(
+        history_sample_count=120,
+        sample_interval_seconds=0.5,
+    )
+    set_process_observer(resource_monitor)
+    resource_monitor.start()
     backend = DevBackendContext(
         project_root=root,
         runtime=runtime,
@@ -328,15 +465,9 @@ def create_dev_backend(
             db_path=db_path,
             runtime_logger=runtime_logger,
         ),
-        main_flow_service=MainFlowService(
-            project_root=root,
-            config=runtime.config,
-            db_path=db_path,
-            storage_root=runtime.config.storage.article_storage_root,
-            temp_root=runtime.config.storage.temp_dir,
-            runtime_logger=runtime_logger,
-        ),
+        main_flow_service=main_flow_service,
         runtime_logger=runtime_logger,
+        system_resource_monitor=resource_monitor,
         window_click_flow_huey_service=WindowClickFlowHueyService(
             temp_root=runtime.config.storage.temp_dir,
             config=runtime.config,
@@ -353,29 +484,11 @@ def create_dev_backend(
             capture_factory=runtime.capture_factory,
             database_path=db_path,
         ),
-        initial_content_storage_huey_service=InitialContentStorageHueyService(
-            temp_root=runtime.config.storage.temp_dir,
-            config=runtime.config,
-            window_factory=runtime.window_factory,
-            capture_factory=runtime.capture_factory,
-            database_path=db_path,
-        ),
-        article_detail_comments_huey_service=ArticleDetailCommentsHueyService(
-            temp_root=runtime.config.storage.temp_dir,
-            config=runtime.config,
-            window_factory=runtime.window_factory,
-            capture_factory=runtime.capture_factory,
-            database_path=db_path,
-        ),
-        article_detail_offline_cache_huey_service=ArticleDetailOfflineCacheHueyService(
-            temp_root=runtime.config.storage.temp_dir,
-            config=runtime.config,
-            window_factory=runtime.window_factory,
-            capture_factory=runtime.capture_factory,
-            database_path=db_path,
-            browser_cache_dir=root / ".playwright-browsers",
-            write_coordinator=runtime.database_write_coordinator,
-        ),
+        main_flow_foreground_huey_service=main_flow_foreground_service,
+        main_flow_detail_huey_service=main_flow_detail_service,
+        initial_content_storage_huey_service=initial_content_service,
+        article_detail_comments_huey_service=diagnostic_comments_service,
+        article_detail_offline_cache_huey_service=diagnostic_offline_service,
         offline_cache_service=OfflineCacheJobService(
             database_path=db_path,
             storage_root=runtime.config.storage.article_storage_root,
@@ -392,6 +505,8 @@ def create_dev_backend(
         f"程序已就绪，数据库：{db_path.name}",
         source="startup",
         summary=True,
+        channel="system",
+        phase="startup",
     )
     return backend
 
@@ -571,6 +686,10 @@ def create_backend_app(backend: DevBackendContext) -> FastAPI:
     @app.get("/api/task/status")
     def get_task_status() -> dict[str, Any]:
         return _current_task_payload(backend)
+
+    @app.get("/api/runtime/hardware")
+    def get_runtime_hardware() -> dict[str, Any]:
+        return _hardware_status_payload(backend)
 
     @app.get("/api/task/logs")
     def get_task_logs(limit: int = 100) -> dict[str, Any]:
@@ -972,6 +1091,33 @@ def create_backend_app(backend: DevBackendContext) -> FastAPI:
 
 def shutdown_backend(backend: DevBackendContext) -> None:
     """后端退出时只取消当前采集任务；8766 端口由 uvicorn 生命周期关闭。"""
+    monitor = backend.system_resource_monitor
+    stop_monitor = getattr(monitor, "stop", None)
+    if callable(stop_monitor):
+        try:
+            stop_monitor()
+        except Exception:
+            pass
+    if monitor is not None:
+        set_process_observer(None)
+    if backend.main_flow_service is not None:
+        try:
+            backend.main_flow_service.shutdown()
+            backend.append_log("INFO", "后端退出，已停止主流程编排器。")
+        except Exception as exc:
+            backend.append_log("ERROR", f"主流程编排器停止失败：{exc}")
+    if backend.main_flow_foreground_huey_service is not None:
+        try:
+            backend.main_flow_foreground_huey_service.shutdown()
+            backend.append_log("INFO", "后端退出，已停止主服务前台Huey队列。")
+        except Exception as exc:
+            backend.append_log("ERROR", f"主服务前台Huey队列停止失败：{exc}")
+    if backend.main_flow_detail_huey_service is not None:
+        try:
+            backend.main_flow_detail_huey_service.shutdown()
+            backend.append_log("INFO", "后端退出，已停止主服务详情Huey队列。")
+        except Exception as exc:
+            backend.append_log("ERROR", f"主服务详情Huey队列停止失败：{exc}")
     if backend.window_click_flow_huey_service is not None:
         try:
             backend.window_click_flow_huey_service.shutdown()
@@ -1159,7 +1305,6 @@ def _main_flow_snapshot_payload(snapshot: Any, backend: DevBackendContext) -> di
     runtime_fields = _runtime_status_fields(backend)
     payload.update(runtime_fields)
     payload["runtimeState"] = dict(snapshot.runtime_state)
-    payload["traffic"] = dict(snapshot.traffic)
     state = snapshot.runtime_state
     payload.update(
         {
@@ -1233,9 +1378,51 @@ def _runtime_status_fields(backend: DevBackendContext) -> dict[str, Any]:
         "dbPath": str(backend.db_path),
         "appStartedAt": backend.started_at.isoformat(timespec="seconds"),
         "uptimeSeconds": int((datetime.now() - backend.started_at).total_seconds()),
+        "hardware": _hardware_status_payload(backend),
         "runtimeState": TaskRuntimeTracker.default_snapshot(
             proxy_status_label=_proxy_status_label(proxy_payload)
         ),
+    }
+
+
+def _hardware_status_payload(backend: DevBackendContext) -> dict[str, Any]:
+    """读取当前 CPU / 物理内存占用，供运行状态区两行折线图使用。"""
+
+    monitor = backend.system_resource_monitor
+    if monitor is None:
+        monitor = ProcessTreeResourceMonitor(history_sample_count=120, sample_interval_seconds=0.5)
+        set_process_observer(monitor)
+        start_monitor = getattr(monitor, "start", None)
+        if callable(start_monitor):
+            start_monitor()
+        backend.system_resource_monitor = monitor
+    try:
+        snapshot = monitor.snapshot()
+    except Exception:
+        timestamp = datetime.now().isoformat(timespec="milliseconds")
+        return {
+            "cpuPercent": 0.0,
+            "memoryPercent": 0.0,
+            "memoryUsedBytes": 0,
+            "cpuLabel": "0.0%",
+            "memoryLabel": "0.0%",
+            "processCount": 0,
+            "historySampleCount": 120,
+            "sampleIntervalSeconds": 0.5,
+            "history": [],
+            "updatedAt": timestamp,
+        }
+    return {
+        "cpuPercent": float(snapshot.get("cpuPercent") or 0.0),
+        "memoryPercent": float(snapshot.get("memoryPercent") or 0.0),
+        "memoryUsedBytes": int(snapshot.get("memoryUsedBytes") or 0),
+        "cpuLabel": str(snapshot.get("cpuLabel") or "0.0%"),
+        "memoryLabel": str(snapshot.get("memoryLabel") or "0.0%"),
+        "processCount": int(snapshot.get("processCount") or 0),
+        "historySampleCount": int(snapshot.get("historySampleCount") or 120),
+        "sampleIntervalSeconds": float(snapshot.get("sampleIntervalSeconds") or 0.5),
+        "history": list(snapshot.get("history") or []),
+        "updatedAt": str(snapshot.get("updatedAt") or datetime.now().isoformat(timespec="milliseconds")),
     }
 
 
@@ -1625,6 +1812,17 @@ def _runtime_cache_busy_reason(backend: DevBackendContext) -> str | None:
 
     if backend.offline_cache_service is not None and backend.offline_cache_service.is_busy():
         return "离线缓存任务正在运行"
+
+    if (
+        backend.main_flow_foreground_huey_service is not None
+        and backend.main_flow_foreground_huey_service.is_active()
+    ):
+        return "主服务前台任务正在运行"
+    if (
+        backend.main_flow_detail_huey_service is not None
+        and backend.main_flow_detail_huey_service.is_active()
+    ):
+        return "主服务详情任务正在运行"
 
     if (
         backend.window_click_flow_huey_service is not None

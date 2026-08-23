@@ -45,6 +45,7 @@ class CommentFetchData:
     page_count: int
     pagination_complete: bool
     stop_reason: str
+    download_bytes: int = 0
 
 
 class WechatCommentRequester:
@@ -94,6 +95,7 @@ class WechatCommentRequester:
         buffer = ""
         stop_reason = "max_pages_reached"
         pagination_complete = False
+        download_bytes = 0
 
         for page_index in range(page_limit):
             url = _build_comment_page_url(
@@ -103,7 +105,13 @@ class WechatCommentRequester:
                 limit=100,
                 buffer=buffer,
             )
-            payload = self._request_json(self._request_get, url, headers=headers, timeout=timeout)
+            payload, response_bytes = self._request_json(
+                self._request_get,
+                url,
+                headers=headers,
+                timeout=timeout,
+            )
+            download_bytes += response_bytes
             pages.append(payload)
             new_count = _count_new_comments(payload, seen_ids)
             page_summaries.append(
@@ -130,7 +138,7 @@ class WechatCommentRequester:
                 self._sleep(interval)
 
         merged = _merge_comment_pages(pages)
-        reply_summary = self._fetch_missing_replies(
+        reply_summary, reply_download_bytes = self._fetch_missing_replies(
             request_get=self._request_get,
             article_url=article_url,
             identity=identity,
@@ -140,6 +148,7 @@ class WechatCommentRequester:
             interval=interval,
             max_pages=page_limit,
         )
+        download_bytes += reply_download_bytes
         comments = _normalize_comments(merged)
         reply_count = sum(_comment_reply_count(item) for item in comments)
         package = {
@@ -165,6 +174,7 @@ class WechatCommentRequester:
             page_count=len(pages),
             pagination_complete=pagination_complete,
             stop_reason=stop_reason,
+            download_bytes=download_bytes,
         )
 
     def _fetch_missing_replies(
@@ -178,9 +188,10 @@ class WechatCommentRequester:
         timeout: float,
         interval: float,
         max_pages: int,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], int]:
         targets = [item for item in _raw_comments(merged) if _reply_missing_count(item) > 0]
         results: list[dict[str, Any]] = []
+        download_bytes = 0
         for target_index, comment in enumerate(targets):
             reply_new = _ensure_reply_new(comment)
             expected = _safe_int(
@@ -212,7 +223,13 @@ class WechatCommentRequester:
                 if not url:
                     stop_reason = "reply_parameters_missing"
                     break
-                payload = self._request_json(request_get, url, headers=headers, timeout=timeout)
+                payload, response_bytes = self._request_json(
+                    request_get,
+                    url,
+                    headers=headers,
+                    timeout=timeout,
+                )
+                download_bytes += response_bytes
                 pages += 1
                 reply_payload = payload.get("reply_list")
                 reply_payload = reply_payload if isinstance(reply_payload, Mapping) else {}
@@ -252,12 +269,15 @@ class WechatCommentRequester:
             )
             if interval and target_index + 1 < len(targets):
                 self._sleep(interval)
-        return {
-            "target_comment_count": len(targets),
-            "reply_page_count": sum(item["page_count"] for item in results),
-            "reply_added_count": sum(item["saved_reply_count"] for item in results),
-            "targets": results,
-        }
+        return (
+            {
+                "target_comment_count": len(targets),
+                "reply_page_count": sum(item["page_count"] for item in results),
+                "reply_added_count": sum(item["saved_reply_count"] for item in results),
+                "targets": results,
+            },
+            download_bytes,
+        )
 
     @staticmethod
     def _request_json(
@@ -266,7 +286,7 @@ class WechatCommentRequester:
         *,
         headers: Mapping[str, str],
         timeout: float,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], int]:
         try:
             response = request_get(
                 url,
@@ -291,7 +311,7 @@ class WechatCommentRequester:
         ret = _safe_int(base_resp.get("ret", payload.get("ret", 0)), 0)
         if ret != 0:
             raise CommentFetchError(f"评论接口返回失败状态：ret={ret}")
-        return payload
+        return payload, len(raw)
 
 
 def normalize_article_url(article_url: str) -> str:

@@ -100,6 +100,7 @@ def _result_payload(
         "index_html_path": "" if result.index_html_path is None else str(result.index_html_path),
         "assets_dir": "" if result.assets_dir is None else str(result.assets_dir),
         "resource_count": int(result.resource_count),
+        "download_bytes": int(result.download_bytes),
         "message": result.message,
         "warning": result.warning,
         "elapsed_seconds": round(max(0.0, elapsed_seconds), 3),

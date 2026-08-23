@@ -27,8 +27,9 @@ test('指定记录总量插画向右移动 5px并保留纵向位置', () => {
 
 test('获取指定内容把文章详情移到插画下方并在右侧加入离线归档', () => {
   assert.match(appVue, /mainTaskSelectionDefaultsApplied/)
-  assert.match(appVue, /data_acquisition\.comment_collection\.enabled_by_default/)
-  assert.match(appVue, /data_acquisition\.offline_cache\.enabled_by_default/)
+  assert.match(appVue, /single_article_task\.comment_collection\.enabled_by_default/)
+  assert.match(appVue, /single_article_task\.offline_cache\.enabled_by_default/)
+  assert.doesNotMatch(appVue, /data_acquisition\.(comment_collection|offline_cache)\.enabled_by_default/)
   assert.match(appVue, /downloadSelections\.value\.offlineArchive\s*=\s*parseConfigSwitchValue/)
   assert.match(appVue, /downloadSelections\.value\.commentInfo\s*=\s*parseConfigSwitchValue/)
   assert.match(appVue, /const mandatoryDownloadOption = \{ key: 'articleDetail', label: '文章详情', locked: true \}/)

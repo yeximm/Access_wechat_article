@@ -617,8 +617,22 @@ watch([selectedCollectType, selectedStatus, selectedCollectStartDate, selectedCo
   await loadHistoryRecords(1, historyPageSize.value)
 })
 
+async function refreshOnActivated() {
+  clearHistoryQueryTimers()
+  await Promise.all([
+    loadHistorySummary(),
+    loadHistorySuggestions(),
+    loadHistoryRecords(historyCurrentPage.value, historyPageSize.value),
+  ])
+  await nextTick()
+  updateHistoryTableMetrics()
+}
+
+defineExpose({
+  refreshOnActivated,
+})
+
 onMounted(async () => {
-  await Promise.all([loadHistorySummary(), loadHistorySuggestions(), loadHistoryRecords(1, historyPageSize.value)])
   await nextTick()
   updateHistoryTableMetrics()
 

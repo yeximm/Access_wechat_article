@@ -77,7 +77,7 @@ single_article_task:
 
   # 评论采集：评论信息存储测试和后续单篇任务评论子流程的默认参数。
   comment_collection:
-    enabled_by_default: true  # 是否默认勾选评论采集；具体任务仍以前端当前勾选为准。
+    enabled_by_default: false  # 是否默认勾选评论采集；具体任务仍以前端当前勾选为准。
     request_timeout_seconds: 10.0  # 每次评论 HTTP 请求的最长等待时间。
     page_interval_seconds: 0.5  # 评论分页请求之间的等待间隔。
     top_level_max_pages: 50  # 一级评论最多请求页数。

@@ -9,14 +9,17 @@ import { DynamicScroller, DynamicScrollerItem, type DynamicScrollerExposed } fro
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import AppTopbar from './components/AppTopbar.vue'
 import TopbarHealthDialog from './components/TopbarHealthDialog.vue'
-import TrafficSparkline from './components/TrafficSparkline.vue'
+import HardwareSparkline from './components/HardwareSparkline.vue'
 import DataFilesPage from './pages/DataFilesPage.vue'
 import HistoryPage from './pages/HistoryPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
 import {
   getPythonStatus,
+  getHardwareStatus,
   getTaskLogs,
   getTaskStatus,
+  startTask,
+  stopTask,
   checkHealthTarget,
   getStartupSelfCheckStatus,
   listArchiveSummary,
@@ -27,9 +30,10 @@ import {
   type HealthCheckResult,
   type StartupSelfCheckResult,
   type TaskLogItem,
+  type TaskRunOptions,
   type TaskRuntimeState,
   type TaskStatus,
-  type TrafficStatus,
+  type HardwareStatus,
 } from './bridge/pythonApi'
 import {
   getBrowserPreviewEnvironmentStatus,
@@ -81,6 +85,14 @@ type LogDisplayRow = {
   message: string
   messageSegments: LogMessageSegment[]
   source: string
+  channel: string
+  phase: string
+  taskIndex: number | string
+  articleTaskId: string
+  articleTitle: string
+}
+type RefreshablePageExpose = {
+  refreshOnActivated?: () => void | Promise<void>
 }
 
 const isDark = ref(false)
@@ -94,7 +106,11 @@ const antThemeConfig = computed<ThemeConfig>(() => ({
   },
 }))
 const activePage = ref<PageKey>('home')
-const logScrollerRef = ref<DynamicScrollerExposed<LogDisplayRow> | null>(null)
+const dataFilesPageRef = ref<RefreshablePageExpose | null>(null)
+const historyPageRef = ref<RefreshablePageExpose | null>(null)
+const settingsPageRef = ref<RefreshablePageExpose | null>(null)
+const systemLogScrollerRef = ref<DynamicScrollerExposed<LogDisplayRow> | null>(null)
+const articleTaskLogScrollerRef = ref<DynamicScrollerExposed<LogDisplayRow> | null>(null)
 const shouldStickLogToBottom = ref(true)
 const lastLogScrollUserInteractionAt = ref(0)
 const githubUrl = 'https://github.com/yeximm/Access_wechat_article'
@@ -102,6 +118,7 @@ const quickStartUrl = 'https://github.com/yeximm/Access_wechat_article/blob/main
 const MAX_PYWEBVIEW_STATUS_RETRIES = 12
 const PYWEBVIEW_STATUS_RETRY_DELAY_MS = 400
 const LOG_POLL_LIMIT = 100
+const HARDWARE_POLL_INTERVAL_MS = 500
 const taskDateFilterMode = ref<TaskDateFilterMode>('all')
 const unlimitedDateTaskCount = ref<number | null>(1)
 const dateRangeTaskCount = ref<number | null>(0)
@@ -154,13 +171,17 @@ const TASK_DATE_FILTER_HINTS: Record<TaskDateFilterMode, string> = {
 const taskDateFilterHint = computed(() => TASK_DATE_FILTER_HINTS[taskDateFilterMode.value])
 const pywebviewStatusLabel = ref('检测中')
 const environmentStatus = ref({ ...INITIAL_ENVIRONMENT_STATUS })
-const defaultTrafficStatus: TrafficStatus = {
-  uploadBytesPerSecond: 0,
-  downloadBytesPerSecond: 0,
-  uploadLabel: '0 KB/s',
-  downloadLabel: '0 KB/s',
-  windowSeconds: 5,
+const defaultHardwareStatus: HardwareStatus = {
+  cpuPercent: 0,
+  memoryPercent: 0,
+  memoryUsedBytes: 0,
+  cpuLabel: '0.0%',
+  memoryLabel: '0.0%',
+  processCount: 0,
+  historySampleCount: 120,
+  sampleIntervalSeconds: 0.5,
   history: [],
+  updatedAt: '',
 }
 const defaultRuntimeState: TaskRuntimeState = {
   currentAction: '点击开始运行后，将从桌面主页窗口读取',
@@ -182,7 +203,7 @@ const taskStatus = ref<TaskStatus>({
   ok: false,
   status: 'idle',
   proxy: { host: '127.0.0.1', port: 18000, enabled: false },
-  traffic: defaultTrafficStatus,
+  hardware: defaultHardwareStatus,
   runtimeState: defaultRuntimeState,
   workers: [],
   home: {
@@ -211,13 +232,17 @@ const downloadSelections = ref({
 const offlineArchiveMode = ref<OfflineArchiveMode>('standard')
 const offlineArchiveModeOpen = ref(false)
 const mainTaskSelectionDefaultsApplied = ref(false)
+const mainTaskSelectionDefaultsSignature = ref('')
 let pywebviewStatusRetryTimer: number | undefined
 let pywebviewStatusRetryCount = 0
 let taskPollingTimer: number | undefined
+let hardwarePollingTimer: number | undefined
+let hardwareStatusErrorReported = false
 let uptimeTimer: number | undefined
 let logAutoFollowTimer: number | undefined
 let startupHealthCheckRequested = false
 let startupSelfCheckRequested = false
+let pageRefreshSequence = 0
 
 // 静态数据先用于还原可视化原型，后续接入 Python 后端后替换为真实运行状态。
 const navGroups: { title: string; items: NavItem[] }[] = [
@@ -286,7 +311,9 @@ const taskStatusLabel = computed(() => {
     idle: '待机',
     starting: '启动中',
     running: '采集中',
+    stopping: '停止中',
     stopped: '已停止',
+    completed: '已完成',
     success: '已完成',
     failed: '异常',
     cancelled: '已停止',
@@ -302,11 +329,11 @@ const taskStatusTone = computed<Tone>(() => {
     return 'blue'
   }
 
-  if (taskStatus.value.status === 'running') {
+  if (['starting', 'running'].includes(taskStatus.value.status)) {
     return 'green'
   }
 
-  if (taskStatus.value.status === 'success') {
+  if (['success', 'completed'].includes(taskStatus.value.status)) {
     return 'green'
   }
 
@@ -438,14 +465,43 @@ const topbarHealthItems = computed(() => [
   },
 ])
 
-const trafficStatus = computed(() => taskStatus.value.traffic ?? defaultTrafficStatus)
-const trafficUploadLabel = computed(() => (
-  trafficStatus.value.uploadLabel || formatTrafficRate(trafficStatus.value.uploadBytesPerSecond)
-))
-const trafficDownloadLabel = computed(() => (
-  trafficStatus.value.downloadLabel || formatTrafficRate(trafficStatus.value.downloadBytesPerSecond)
-))
-const trafficHistory = computed(() => trafficStatus.value.history ?? [])
+const hardwareStatus = computed(() => taskStatus.value.hardware ?? defaultHardwareStatus)
+const hardwareCpuLabel = computed(() => hardwareStatus.value.cpuLabel || `${normalizePercent(hardwareStatus.value.cpuPercent).toFixed(1)}%`)
+const hardwareMemoryLabel = computed(() => hardwareStatus.value.memoryLabel || `${normalizePercent(hardwareStatus.value.memoryPercent).toFixed(1)}%`)
+const hardwareMemoryUsedLabel = computed(() => formatMemoryBytes(hardwareStatus.value.memoryUsedBytes))
+const hardwareMemoryTooltip = computed(() => {
+  const processCount = Number(hardwareStatus.value.processCount ?? 0)
+  const processLabel = Number.isFinite(processCount) ? Math.max(0, Math.floor(processCount)) : 0
+  return `当前软件占用 ${hardwareMemoryUsedLabel.value}，监控进程 ${processLabel} 个`
+})
+const hardwareHistory = computed(() => hardwareStatus.value.history ?? [])
+
+function normalizePercent(value: unknown) {
+  const percent = Number(value)
+  if (!Number.isFinite(percent)) {
+    return 0
+  }
+  return Math.min(100, Math.max(0, percent))
+}
+
+function formatMemoryBytes(value: unknown) {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B'
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let normalized = bytes
+  let unitIndex = 0
+  while (normalized >= 1024 && unitIndex < units.length - 1) {
+    normalized /= 1024
+    unitIndex += 1
+  }
+
+  const decimals = unitIndex === 0 ? 0 : normalized >= 100 ? 0 : 1
+  return `${normalized.toFixed(decimals)} ${units[unitIndex]}`
+}
+
 const runtimeState = computed<TaskRuntimeState>(() => ({
   ...defaultRuntimeState,
   ...(taskStatus.value.runtimeState ?? {}),
@@ -478,11 +534,12 @@ const logLevelLabels = {
   ERROR: 'ERROR',
 } satisfies Record<RuntimeLogLevel, string>
 
-const logDisplayRows = computed<LogDisplayRow[]>(() => {
+const allLogRows = computed<LogDisplayRow[]>(() => {
   const mergedLogs = [...taskLogs.value, ...frontendRuntimeLogs.value]
     .sort((left, right) => String(left.createdAt || '').localeCompare(String(right.createdAt || '')))
   const rows = mergedLogs.map((item, index) => {
     const level = normalizeLogLevel(item.level)
+    const channel = normalizeLogChannel(item.channel)
 
     return {
       id: `${item.createdAt || 'unknown'}-${item.source || 'runtime'}-${index}-${item.message}`,
@@ -493,11 +550,23 @@ const logDisplayRows = computed<LogDisplayRow[]>(() => {
       message: item.message,
       messageSegments: formatLogMessageSegments(item.message),
       source: item.source || 'runtime',
+      channel,
+      phase: item.phase || '',
+      taskIndex: item.taskIndex ?? '',
+      articleTaskId: item.articleTaskId || '',
+      articleTitle: item.articleTitle || '',
     }
   })
 
   return rows.filter((item) => activeLogLevel.value === 'ALL' || item.level === activeLogLevel.value)
 })
+
+const systemLogRows = computed<LogDisplayRow[]>(() =>
+  allLogRows.value.filter((row) => !isArticleTaskLog(row)),
+)
+const articleTaskLogRows = computed<LogDisplayRow[]>(() =>
+  allLogRows.value.filter((row) => isArticleTaskLog(row)),
+)
 
 const statusItems = computed(() => [
   {
@@ -575,9 +644,6 @@ const progressStrokeColor = computed(() => ({
 }))
 
 const progressPercent = computed(() => {
-  // 临时固定为 80%，用于预览 Ant Design Vue 渐变进度条效果。
-  return 80
-
   const runtimeProgress = Number(runtimeState.value.progressPercent)
   if (Number.isFinite(runtimeProgress)) {
     return Math.min(100, Math.max(0, Math.round(runtimeProgress)))
@@ -610,20 +676,33 @@ function parseConfigSwitchValue(value: unknown, fallback: boolean) {
   return fallback
 }
 
+function buildMainTaskSelectionDefaultsSignature(values: Record<string, string>) {
+  // 只跟踪会影响主服务页默认勾选的配置项，避免普通状态轮询覆盖用户手动选择。
+  return [
+    values['single_article_task.comment_collection.enabled_by_default'] ?? '',
+    values['single_article_task.offline_cache.enabled_by_default'] ?? '',
+  ].join('|')
+}
+
 function applyMainTaskSelectionDefaults(values?: Record<string, string>) {
-  // YAML 只负责主服务页初始勾选状态；用户手动切换后不能再被状态轮询覆盖。
-  if (mainTaskSelectionDefaultsApplied.value || taskSettingsLocked.value || !values) {
-    return
-  }
+  // YAML 负责默认勾选；配置未变化时保留用户在主服务页的手动选择。
+  if (taskSettingsLocked.value || !values) return
+
+  const defaultsSignature = buildMainTaskSelectionDefaultsSignature(values)
+  if (
+    mainTaskSelectionDefaultsApplied.value
+    && mainTaskSelectionDefaultsSignature.value === defaultsSignature
+  ) return
 
   downloadSelections.value.commentInfo = parseConfigSwitchValue(
-    values['data_acquisition.comment_collection.enabled_by_default'],
+    values['single_article_task.comment_collection.enabled_by_default'],
     downloadSelections.value.commentInfo,
   )
   downloadSelections.value.offlineArchive = parseConfigSwitchValue(
-    values['data_acquisition.offline_cache.enabled_by_default'],
+    values['single_article_task.offline_cache.enabled_by_default'],
     downloadSelections.value.offlineArchive,
   )
+  mainTaskSelectionDefaultsSignature.value = defaultsSignature
   mainTaskSelectionDefaultsApplied.value = true
 }
 
@@ -643,6 +722,82 @@ function handleOfflineArchiveModeChange(value: OfflineArchiveMode) {
   offlineArchiveMode.value = value
   offlineArchiveModeOpen.value = false
   mainTaskSelectionDefaultsApplied.value = true
+}
+
+function buildTaskRunOptions(): TaskRunOptions {
+  const mode = taskDateFilterMode.value
+  return {
+    recordLimit: normalizedPageCount.value,
+    dateFilterMode: mode,
+    startDate: mode === 'range' || mode === 'after' ? (taskStartDate.value || undefined) : undefined,
+    endDate: mode === 'range' || mode === 'before' ? (taskEndDate.value || undefined) : undefined,
+    selections: {
+      articleDetail: true,
+      offlineArchive: downloadSelections.value.offlineArchive,
+      commentInfo: downloadSelections.value.commentInfo,
+      skipCollectedRecords: downloadSelections.value.skipCollectedRecords,
+      offlineArchiveMode: offlineArchiveMode.value,
+    },
+  }
+}
+
+function validateTaskRunOptions(options: TaskRunOptions): string | null {
+  if (options.dateFilterMode === 'range' && (!options.startDate || !options.endDate)) {
+    return '请选择完整的日期范围。'
+  }
+  if (options.dateFilterMode === 'before' && !options.endDate) {
+    return '请选择截止日期。'
+  }
+  if (options.dateFilterMode === 'after' && !options.startDate) {
+    return '请选择起始日期。'
+  }
+  if (options.dateFilterMode === 'range' && options.startDate && options.endDate && options.startDate > options.endDate) {
+    return '起始日期不能晚于截止日期。'
+  }
+  return null
+}
+
+async function handleStartTask() {
+  if (taskSettingsLocked.value) {
+    return
+  }
+
+  const options = buildTaskRunOptions()
+  const validationMessage = validateTaskRunOptions(options)
+  if (validationMessage) {
+    appendFrontendRuntimeError(validationMessage)
+    return
+  }
+
+  try {
+    const status = await startTask(options)
+    handleTaskStatusChanged(status)
+    homeRuntimeState.value = 'running'
+    startTaskPolling()
+  } catch (error) {
+    const message = `启动采集任务失败：${formatErrorMessage(error)}`
+    appendFrontendRuntimeError(message)
+    try {
+      const status = await getTaskStatus()
+      handleTaskStatusChanged(status)
+    } catch (refreshError) {
+      appendFrontendRuntimeError(`读取启动失败状态失败：${formatErrorMessage(refreshError)}`)
+    }
+  }
+}
+
+async function handleStopTask() {
+  if (!['starting', 'running'].includes(taskStatus.value.status)) {
+    return
+  }
+
+  try {
+    const status = await stopTask()
+    handleTaskStatusChanged(status)
+    startTaskPolling()
+  } catch (error) {
+    appendFrontendRuntimeError(`停止采集任务失败：${formatErrorMessage(error)}`)
+  }
 }
 
 function markHomeDetectionStarting() {
@@ -671,7 +826,15 @@ function hideStatusValueTooltip(key: string) {
 function selectPage(page: PageKey | null) {
   if (page) {
     activePage.value = page
+    void refreshActivePage(page)
   }
+}
+
+async function refreshActivePage(page: PageKey) {
+  const refreshSequence = ++pageRefreshSequence
+  await nextTick()
+  if (refreshSequence !== pageRefreshSequence || activePage.value !== page) return
+  await pageActivationRefreshers[page]()
 }
 
 function formatDuration(totalSeconds: number) {
@@ -683,20 +846,6 @@ function formatDuration(totalSeconds: number) {
   return [hours, minutes, seconds].map((item) => String(item).padStart(2, '0')).join(':')
 }
 
-function formatTrafficRate(bytesPerSecond: number) {
-  const safeValue = Math.max(0, Number(bytesPerSecond) || 0)
-  if (safeValue <= 0) {
-    return '0 KB/s'
-  }
-
-  const kib = safeValue / 1024
-  if (kib < 1024) {
-    return `${Number(kib.toFixed(1))} KB/s`
-  }
-
-  return `${Number((kib / 1024).toFixed(1))} MB/s`
-}
-
 function normalizeLogLevel(level: string): RuntimeLogLevel {
   const normalized = String(level || 'INFO').toUpperCase()
   if (normalized === 'SUCCESS' || normalized === 'WARN' || normalized === 'ERROR') {
@@ -704,6 +853,15 @@ function normalizeLogLevel(level: string): RuntimeLogLevel {
   }
 
   return 'INFO'
+}
+
+function normalizeLogChannel(channel?: string): string {
+  const normalized = String(channel || 'system').trim().toLowerCase().replace(/-/g, '_')
+  return normalized === 'article_task' || normalized === 'main_flow' ? normalized : 'system'
+}
+
+function isArticleTaskLog(row: LogDisplayRow): boolean {
+  return row.channel === 'article_task'
 }
 
 function formatLogTime(createdAt: string) {
@@ -852,17 +1010,23 @@ function appendFrontendRuntimeError(message: string) {
       message,
       source: 'frontend',
       createdAt: new Date().toISOString().slice(0, 19),
+      channel: 'system',
+      phase: 'frontend',
     },
   ].slice(-LOG_POLL_LIMIT)
 }
 
 async function scrollLogTableToLatest() {
   await nextTick()
-  if (!logDisplayRows.value.length || !shouldStickLogToBottom.value) {
+  if (
+    (!systemLogRows.value.length && !articleTaskLogRows.value.length)
+    || !shouldStickLogToBottom.value
+  ) {
     return
   }
 
-  logScrollerRef.value?.scrollToBottom()
+  systemLogScrollerRef.value?.scrollToBottom()
+  articleTaskLogScrollerRef.value?.scrollToBottom()
 }
 
 function stopLogAutoFollowTimer() {
@@ -983,11 +1147,14 @@ function stopTaskPolling() {
 async function refreshTaskRuntime() {
   try {
     const [status, logs] = await Promise.all([getTaskStatus(), getTaskLogs(LOG_POLL_LIMIT)])
-    taskStatus.value = status
+    taskStatus.value = {
+      ...status,
+      hardware: status.hardware ?? taskStatus.value.hardware ?? defaultHardwareStatus,
+    }
     applyMainTaskSelectionDefaults(status.config?.values)
     uptimeSeconds.value = status.uptimeSeconds ?? uptimeSeconds.value
     taskLogs.value = Array.isArray(logs.items) ? logs.items : []
-    homeRuntimeState.value = status.status === 'running' ? 'running' : 'idle'
+    homeRuntimeState.value = ['starting', 'running', 'stopping'].includes(status.status) ? 'running' : 'idle'
     syncTaskPolling(status)
   } catch (error) {
     appendFrontendRuntimeError(`读取运行状态失败：${formatErrorMessage(error)}`)
@@ -1004,10 +1171,54 @@ async function refreshArchiveSummary() {
 }
 
 function handleTaskStatusChanged(status: TaskStatus) {
-  taskStatus.value = status
+  taskStatus.value = {
+    ...status,
+    hardware: status.hardware ?? taskStatus.value.hardware ?? defaultHardwareStatus,
+  }
   applyMainTaskSelectionDefaults(status.config?.values)
   uptimeSeconds.value = status.uptimeSeconds ?? uptimeSeconds.value
   syncTaskPolling(status)
+}
+
+async function refreshHardwareStatus() {
+  try {
+    const hardware = await getHardwareStatus()
+    taskStatus.value = {
+      ...taskStatus.value,
+      hardware,
+    }
+    hardwareStatusErrorReported = false
+  } catch (error) {
+    if (!hardwareStatusErrorReported) {
+      hardwareStatusErrorReported = true
+      appendFrontendRuntimeError(`读取硬件状态失败：${formatErrorMessage(error)}`)
+    }
+  }
+}
+
+async function refreshHomePageOnActivated() {
+  await Promise.all([refreshTaskRuntime(), refreshArchiveSummary(), refreshHardwareStatus()])
+}
+
+const pageActivationRefreshers: Record<PageKey, () => void | Promise<void>> = {
+  home: refreshHomePageOnActivated,
+  files: () => dataFilesPageRef.value?.refreshOnActivated?.(),
+  history: () => historyPageRef.value?.refreshOnActivated?.(),
+  settings: () => settingsPageRef.value?.refreshOnActivated?.(),
+}
+
+function startHardwarePolling() {
+  if (hardwarePollingTimer !== undefined) {
+    return
+  }
+  hardwarePollingTimer = window.setInterval(() => {
+    void refreshHardwareStatus()
+  }, HARDWARE_POLL_INTERVAL_MS)
+}
+
+function stopHardwarePolling() {
+  window.clearInterval(hardwarePollingTimer)
+  hardwarePollingTimer = undefined
 }
 
 function startTaskPolling() {
@@ -1021,12 +1232,12 @@ function startTaskPolling() {
 }
 
 function shouldPollTaskRuntime(status: TaskStatus) {
-  return status.status === 'starting' || status.status === 'running'
+  return ['starting', 'running', 'stopping'].includes(status.status)
 }
 
 // 诊断接口可能返回 managed-by-capture，这类结果不代表采集任务已结束。
 function isTaskLifecycleStatus(status: TaskStatus) {
-  return ['idle', 'starting', 'running', 'stopped', 'error'].includes(status.status)
+  return ['idle', 'starting', 'running', 'stopping', 'completed', 'cancelled', 'stopped', 'error', 'failed'].includes(status.status)
 }
 
 function syncTaskPolling(status: TaskStatus) {
@@ -1071,17 +1282,20 @@ onMounted(async () => {
   refreshPythonStatus()
   refreshArchiveSummary()
   startUptimeTimer()
+  startHardwarePolling()
   await refreshTaskRuntime()
+  await refreshHardwareStatus()
   await refreshStartupSelfCheck()
   await refreshStartupHealthChecks()
 })
-watch(logDisplayRows, async () => {
+watch([systemLogRows, articleTaskLogRows], async () => {
   await scrollLogTableToLatest()
 }, { flush: 'post' })
 onBeforeUnmount(() => {
   stopPywebviewStatusRetry()
   stopLogAutoFollowTimer()
   stopTaskPolling()
+  stopHardwarePolling()
   stopUptimeTimer()
   window.removeEventListener('pywebviewready', handlePywebviewReady)
 })
@@ -1371,7 +1585,8 @@ onBeforeUnmount(() => {
               html-type="button"
               size="large"
               :loading="taskStatus.status === 'starting'"
-              :disabled="taskStatus.status === 'running' || taskStatus.status === 'starting'"
+              :disabled="taskSettingsLocked"
+              @click="handleStartTask"
             >
               <AppIcon icon="fa-solid fa-play" />
               <span class="button-label">开始运行</span>
@@ -1381,7 +1596,9 @@ onBeforeUnmount(() => {
               html-type="button"
               size="large"
               danger
-              :disabled="taskStatus.status !== 'running' && taskStatus.status !== 'starting' && taskStatus.status !== 'error'"
+              :loading="taskStatus.status === 'stopping'"
+              :disabled="taskStatus.status !== 'running' && taskStatus.status !== 'starting'"
+              @click="handleStopTask"
             >
               <AppIcon icon="fa-solid fa-stop" />
               <span class="button-label">停止</span>
@@ -1458,17 +1675,32 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="network-panel">
-              <div class="speed">
-                <p>
-                  <AppIcon icon="speed-icon fa-solid fa-chart-line" />
-                  当前速率
-                </p>
-                <div class="speed-values">
-                  <strong class="speed-upload">↑ {{ trafficUploadLabel }}</strong>
-                  <strong class="speed-download">↓ {{ trafficDownloadLabel }}</strong>
+              <div class="hardware-labels" aria-label="硬件指标">
+                <span class="hardware-label-row">
+                  <AppIcon icon="hardware-label-icon hardware-cpu-icon fa-solid fa-microchip" />
+                  <span class="hardware-label-box">
+                    <span class="hardware-label-text">CPU 使用占比</span>
+                  </span>
+                </span>
+                <span class="hardware-label-row">
+                  <AppIcon icon="hardware-label-icon hardware-memory-icon fa-solid fa-memory" />
+                  <span class="hardware-label-box">
+                    <span class="hardware-label-text">物理内存占比</span>
+                  </span>
+                </span>
+              </div>
+              <div class="speed-content">
+                <HardwareSparkline
+                  class="mini-chart"
+                  :points="hardwareHistory"
+                />
+                <div class="speed-values" aria-label="当前 CPU 和物理内存占比">
+                  <strong class="hardware-cpu">{{ hardwareCpuLabel }}</strong>
+                  <ATooltip :title="hardwareMemoryTooltip" placement="top">
+                    <strong class="hardware-memory">{{ hardwareMemoryLabel }}</strong>
+                  </ATooltip>
                 </div>
               </div>
-              <TrafficSparkline class="mini-chart" :points="trafficHistory" />
             </div>
           </article>
         </section>
@@ -1567,60 +1799,118 @@ onBeforeUnmount(() => {
               </AButton>
             </div>
           </div>
-          <DynamicScroller
-            ref="logScrollerRef"
-            tabindex="0"
-            class="log-table"
-            :items="logDisplayRows"
-            key-field="id"
-            :min-item-size="24"
-            @scroll.passive="handleLogTableScroll"
-            @pointerdown.passive="markLogScrollUserInteraction"
-            @touchstart.passive="markLogScrollUserInteraction"
-            @wheel.passive="markLogScrollUserInteraction"
-            @keydown="markLogScrollUserInteraction"
-          >
-            <template #default="{ item: row, index, active }">
-              <DynamicScrollerItem
-                :item="row"
-                :active="active"
-                :data-index="index"
-                :size-dependencies="[row.message, row.levelLabel]"
-              >
-                <div :class="['log-row', `log-row-${row.levelClass}`]">
-                  <time>[{{ row.time }}]</time>
-                  <strong :class="['log-level', `log-level-${row.levelClass}`]">{{ row.levelLabel }}</strong>
-                  <span class="log-message" :title="row.message">
-                    <template v-for="(segment, segmentIndex) in row.messageSegments" :key="`${row.id}-${segmentIndex}`">
-                      <span
-                        v-if="segment.type === 'url'"
-                        class="log-url"
-                        :title="segment.fullText"
-                      >{{ segment.text }}</span>
-                      <span v-else>{{ segment.text }}</span>
-                    </template>
-                  </span>
-                </div>
-              </DynamicScrollerItem>
-            </template>
-            <template #empty>
-              <div class="log-empty">
-                暂无运行日志，程序开始运行后会实时显示最新信息。
+          <div class="log-columns" aria-label="运行日志分栏">
+            <section class="log-column" aria-label="软件活动和主流程日志">
+              <div class="log-column-header">
+                <h3>软件活动 / 主流程</h3>
+                <span>{{ systemLogRows.length }} 条</span>
               </div>
-            </template>
-          </DynamicScroller>
+              <DynamicScroller
+                ref="systemLogScrollerRef"
+                tabindex="0"
+                class="log-table"
+                :items="systemLogRows"
+                key-field="id"
+                :min-item-size="24"
+                @scroll.passive="handleLogTableScroll"
+                @pointerdown.passive="markLogScrollUserInteraction"
+                @touchstart.passive="markLogScrollUserInteraction"
+                @wheel.passive="markLogScrollUserInteraction"
+                @keydown="markLogScrollUserInteraction"
+              >
+                <template #default="{ item: row, index, active }">
+                  <DynamicScrollerItem
+                    :item="row"
+                    :active="active"
+                    :data-index="index"
+                    :size-dependencies="[row.message, row.levelLabel]"
+                  >
+                    <div :class="['log-row', `log-row-${row.levelClass}`]">
+                      <time>[{{ row.time }}]</time>
+                      <strong :class="['log-level', `log-level-${row.levelClass}`]">{{ row.levelLabel }}</strong>
+                      <span class="log-message" :title="row.message">
+                        <template v-for="(segment, segmentIndex) in row.messageSegments" :key="`${row.id}-${segmentIndex}`">
+                          <span
+                            v-if="segment.type === 'url'"
+                            class="log-url"
+                            :title="segment.fullText"
+                          >{{ segment.text }}</span>
+                          <span v-else>{{ segment.text }}</span>
+                        </template>
+                      </span>
+                    </div>
+                  </DynamicScrollerItem>
+                </template>
+                <template #empty>
+                  <div class="log-empty">
+                    暂无软件活动日志，程序开始运行后会显示主流程状态。
+                  </div>
+                </template>
+              </DynamicScroller>
+            </section>
+            <section class="log-column" aria-label="单篇任务日志">
+              <div class="log-column-header">
+                <h3>单篇任务</h3>
+                <span>{{ articleTaskLogRows.length }} 条</span>
+              </div>
+              <DynamicScroller
+                ref="articleTaskLogScrollerRef"
+                tabindex="0"
+                class="log-table"
+                :items="articleTaskLogRows"
+                key-field="id"
+                :min-item-size="24"
+                @scroll.passive="handleLogTableScroll"
+                @pointerdown.passive="markLogScrollUserInteraction"
+                @touchstart.passive="markLogScrollUserInteraction"
+                @wheel.passive="markLogScrollUserInteraction"
+                @keydown="markLogScrollUserInteraction"
+              >
+                <template #default="{ item: row, index, active }">
+                  <DynamicScrollerItem
+                    :item="row"
+                    :active="active"
+                    :data-index="index"
+                    :size-dependencies="[row.message, row.levelLabel]"
+                  >
+                    <div :class="['log-row', `log-row-${row.levelClass}`]">
+                      <time>[{{ row.time }}]</time>
+                      <strong :class="['log-level', `log-level-${row.levelClass}`]">{{ row.levelLabel }}</strong>
+                      <span class="log-message" :title="row.message">
+                        <template v-for="(segment, segmentIndex) in row.messageSegments" :key="`${row.id}-${segmentIndex}`">
+                          <span
+                            v-if="segment.type === 'url'"
+                            class="log-url"
+                            :title="segment.fullText"
+                          >{{ segment.text }}</span>
+                          <span v-else>{{ segment.text }}</span>
+                        </template>
+                      </span>
+                    </div>
+                  </DynamicScrollerItem>
+                </template>
+                <template #empty>
+                  <div class="log-empty">
+                    暂无单篇任务日志，主流程分发文章后会显示处理节点。
+                  </div>
+                </template>
+              </DynamicScroller>
+            </section>
+          </div>
         </section>
         </template>
 
         <DataFilesPage
           v-else-if="activePage === 'files'"
+          ref="dataFilesPageRef"
           class="management-area"
           :summary-stats="stats"
           @navigate="selectPage"
         />
-        <HistoryPage v-else-if="activePage === 'history'" class="management-area" />
+        <HistoryPage v-else-if="activePage === 'history'" ref="historyPageRef" class="management-area" />
         <SettingsPage
           v-else
+          ref="settingsPageRef"
           class="management-area"
           :environment-items="envItems"
           :task-status="taskStatus"
@@ -3014,18 +3304,52 @@ input:focus-visible {
 
 .network-panel {
   display: grid;
-  grid-template-columns: 118px minmax(0, 94px) minmax(116px, 1fr);
-  gap: 16px;
+  grid-template-columns: 118px minmax(0, 1fr);
+  column-gap: 10px;
   align-items: center;
   min-height: 82px;
   padding-top: 18px;
 }
 
-.network-panel p {
-  margin: 0 0 7px;
-  color: var(--ink-muted);
-  font-size: 14px;
+.hardware-labels {
+  display: grid;
+  grid-template-rows: repeat(2, 1fr);
+  align-items: center;
+  height: 62px;
+  font-size: 13px;
   font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.hardware-label-row {
+  display: grid;
+  grid-template-columns: 16px 88px;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.hardware-label-icon {
+  width: 16px;
+  color: var(--blue);
+  font-size: 14px;
+  text-align: center;
+}
+
+.hardware-label-box {
+  display: block;
+  width: 88px;
+}
+
+.hardware-label-text {
+  display: block;
+  width: 100%;
+  color: var(--ink-muted);
+  font-weight: 400;
+  text-align: justify;
+  text-align-last: justify;
+  text-justify: inter-character;
 }
 
 .network-panel strong {
@@ -3035,41 +3359,29 @@ input:focus-visible {
   white-space: nowrap;
 }
 
-.speed-upload {
+.hardware-cpu {
   color: var(--green);
 }
 
-.speed-download {
+.hardware-memory {
   color: var(--blue);
 }
 
-.speed {
-  display: contents;
-}
-
-.speed p {
-  display: inline-flex;
+.speed-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
   align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: var(--ink-muted);
-  font-size: 14px;
-  font-weight: 400;
-  white-space: nowrap;
-}
-
-.speed-icon {
-  width: 18px;
-  color: var(--blue);
-  font-size: 15px;
-  text-align: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .speed-values {
   display: grid;
-  gap: 9px;
+  grid-template-rows: repeat(2, 1fr);
+  gap: 0;
   align-items: center;
   justify-items: start;
+  height: 62px;
   min-width: 0;
   white-space: nowrap;
 }
@@ -3077,8 +3389,9 @@ input:focus-visible {
 .mini-chart {
   align-self: center;
   width: 100%;
-  min-width: 116px;
+  min-width: 0;
   height: 62px;
+  transform: translateY(7px);
 }
 
 .stats-card,
@@ -3495,12 +3808,60 @@ input:focus-visible {
   background: rgba(38, 58, 86, 0.78);
 }
 
-.log-table {
+.log-columns {
   position: relative;
   z-index: 1;
   box-sizing: border-box;
   height: 200px;
   margin-top: 8px;
+  display: grid;
+  /* 日志左右两栏平分宽度，避免单篇任务栏视觉上压过主流程日志。 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.log-column {
+  display: grid;
+  grid-template-rows: 24px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.log-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.log-column-header h3 {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.log-column-header span {
+  flex: none;
+  color: var(--ink-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.log-table {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  height: 100%;
+  margin-top: 0;
   padding: 8px 10px;
   border: 1px solid rgba(104, 141, 181, 0.2);
   border-radius: 8px;
@@ -3525,8 +3886,8 @@ input:focus-visible {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 78px 58px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 68px 58px minmax(0, 1fr);
+  gap: 6px;
   min-height: 24px;
   align-items: start;
   color: var(--ink);

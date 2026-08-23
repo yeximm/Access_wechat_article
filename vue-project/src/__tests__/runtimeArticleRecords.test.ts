@@ -17,5 +17,15 @@ test('主服务日志只显示后端摘要而不逐条展开文章阶段', () =>
   assert.match(appVue, /const LOG_POLL_LIMIT = 100/)
   assert.doesNotMatch(appVue, /function buildArticleRuntimeLogItems\(/)
   assert.doesNotMatch(appVue, /articleRuntimeLogs/)
-  assert.match(appVue, /const mergedLogs = \[\.\.\.taskLogs\.value, \.\.\.frontendRuntimeLogs\.value\]/)
+  assert.match(appVue, /const systemLogRows = computed<LogDisplayRow\[\]>\(/)
+  assert.match(appVue, /const articleTaskLogRows = computed<LogDisplayRow\[\]>\(/)
+  assert.match(appVue, /isArticleTaskLog\(row\)/)
+})
+
+test('main service logs are split into software activity and article task columns', () => {
+  assert.match(appVue, /<div class="log-columns"/)
+  assert.match(appVue, /<h3>软件活动 \/ 主流程<\/h3>/)
+  assert.match(appVue, /<h3>单篇任务<\/h3>/)
+  assert.match(appVue, /:items="systemLogRows"/)
+  assert.match(appVue, /:items="articleTaskLogRows"/)
 })

@@ -122,6 +122,7 @@ def _result_payload(
                 "resource_manifest": data.resource_manifest.to_json_values(),
                 "asset_count": data.asset_count,
                 "asset_dir": "" if data.asset_dir is None else str(data.asset_dir),
+                "download_bytes": int(data.download_bytes),
             }
         )
     return payload

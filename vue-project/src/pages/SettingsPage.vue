@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppIcon from '../components/AppIcon.vue'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { notification } from 'ant-design-vue'
 import { resolveDiagnosticProgressMessage } from '../utils/diagnosticProgressMessage'
 import {
@@ -734,7 +734,7 @@ const selectedSettingsDetail = computed<SettingsDetailContent | null>(() => {
       return {
         note: '流程测试均基于当前微信主页窗口。已接入窗口测试、详情获取、初始内容存储、详情评论和离线缓存。',
         actions: [
-          { label: '窗口内容读取', buttonLabel: '窗口测试', description: '首次立即激活公众号主页，按 UIA 日期组和文章卡片读取当前可视内容；滚动后重新读取并用日期加标题衔接，不点击文章、不启动 MITM。', icon: 'fa-solid fa-window-restore', tone: 'blue', showWindowClickFlowOptions: true, disabled: () => isWindowClickFlowDiagnosticRunning.value || isWindowDiagnosticRunning.value, run: handleWindowClickFlowDiagnosticAction },
+          { label: '窗口点击流程', buttonLabel: '窗口测试', description: '首次立即激活公众号主页，按 UIA 日期组和文章卡片读取当前可视内容；滚动后重新读取并用日期加标题衔接，不点击文章、不启动 MITM。', icon: 'fa-solid fa-window-restore', tone: 'blue', showWindowClickFlowOptions: true, disabled: () => isWindowClickFlowDiagnosticRunning.value || isWindowDiagnosticRunning.value, run: handleWindowClickFlowDiagnosticAction },
           { label: '单篇文章详情流程', buttonLabel: '详情获取', description: '激活主页窗口并读取当前可视区第一篇文章卡片', icon: 'fa-regular fa-file-lines', tone: 'purple', showArticleDetailSkipCollectedOption: true, disabled: () => isArticleDetailDiagnosticRunning.value || isInitialContentStorageDiagnosticRunning.value || isArticleDetailCommentsDiagnosticRunning.value || isArticleDetailOfflineCacheDiagnosticRunning.value || isWindowClickFlowDiagnosticRunning.value, run: handleArticleDetailDiagnosticAction },
           { label: '初始内容存储测试', buttonLabel: '初始内容存储', description: '复用单篇文章详情流程，解析 HTML 并存储初始文章内容', icon: 'fa-solid fa-box-archive', tone: 'success', showInitialContentStorageOptions: true, disabled: () => isInitialContentStorageDiagnosticRunning.value || isArticleDetailDiagnosticRunning.value || isArticleDetailCommentsDiagnosticRunning.value || isArticleDetailOfflineCacheDiagnosticRunning.value || isWindowClickFlowDiagnosticRunning.value, run: handleInitialContentStorageDiagnosticAction },
           { label: '单篇评论存储测试', buttonLabel: '评论信息存储', description: '复用初始内容存储，随后启动独立评论子进程采集评论', icon: 'fa-regular fa-clipboard', tone: 'orange', showArticleDetailCommentsOptions: true, disabled: () => isArticleDetailCommentsDiagnosticRunning.value || isArticleDetailDiagnosticRunning.value || isInitialContentStorageDiagnosticRunning.value || isWindowClickFlowDiagnosticRunning.value || isArticleDetailOfflineCacheDiagnosticRunning.value, run: handleArticleDetailCommentsDiagnosticAction },
@@ -2537,9 +2537,12 @@ watch(
   { immediate: true },
 )
 
-onMounted(() => {
-  hydrateRuntimePaths()
-  syncProxySwitchState()
+async function refreshOnActivated() {
+  await Promise.all([hydrateRuntimePaths(), syncProxySwitchState()])
+}
+
+defineExpose({
+  refreshOnActivated,
 })
 </script>
 
@@ -5591,6 +5594,32 @@ onMounted(() => {
   background: #DDEEFF;
 }
 
+.mitm-cert-dialog-actions :deep(.ant-btn.config-action-button.primary) {
+  --config-action-color: #ffffff;
+  --config-action-border: #357FD9;
+  --config-action-bg: #357FD9;
+  --config-action-hover-color: #ffffff;
+  --config-action-hover-border: #2267B8;
+  --config-action-hover-bg: #2267B8;
+  --config-action-active-bg: #1D579C;
+  color: #ffffff;
+  border-color: #357FD9;
+  background: #357FD9;
+  opacity: 1;
+}
+
+.mitm-cert-dialog-actions :deep(.ant-btn.config-action-button.primary:not(:disabled):hover) {
+  color: #ffffff;
+  border-color: #2267B8;
+  background: #2267B8;
+}
+
+.mitm-cert-dialog-actions :deep(.ant-btn.config-action-button.primary:not(:disabled):active) {
+  color: #ffffff;
+  border-color: #1D579C;
+  background: #1D579C;
+}
+
 .diagnostic-result-dialog {
   display: flex;
   flex-direction: column;
@@ -6286,6 +6315,32 @@ onMounted(() => {
   --config-action-hover-border: rgba(103, 163, 235, 0.48);
   --config-action-bg: rgba(22, 46, 74, 0.58);
   --config-action-hover-bg: rgba(30, 60, 94, 0.72);
+}
+
+:global(.collector-app.dark) .mitm-cert-dialog-actions :deep(.ant-btn.config-action-button.primary) {
+  --config-action-color: #ffffff;
+  --config-action-border: #3D7FCC;
+  --config-action-bg: #3D7FCC;
+  --config-action-hover-color: #ffffff;
+  --config-action-hover-border: #4B8DDB;
+  --config-action-hover-bg: #4B8DDB;
+  --config-action-active-bg: #2E68AE;
+  color: #ffffff;
+  border-color: #3D7FCC;
+  background: #3D7FCC;
+  opacity: 1;
+}
+
+:global(.collector-app.dark) .mitm-cert-dialog-actions :deep(.ant-btn.config-action-button.primary:not(:disabled):hover) {
+  color: #ffffff;
+  border-color: #4B8DDB;
+  background: #4B8DDB;
+}
+
+:global(.collector-app.dark) .mitm-cert-dialog-actions :deep(.ant-btn.config-action-button.primary:not(:disabled):active) {
+  color: #ffffff;
+  border-color: #2E68AE;
+  background: #2E68AE;
 }
 
 :global(.collector-app.dark) .mitm-cert-dialog-backdrop {

@@ -39,6 +39,8 @@ test('program status panel removes proxy row and stretches remaining content', (
   const statusProgressRowRule = extractRule(appVue, '.status-row.with-progress')
   const statusProgressValueRule = extractRule(appVue, '.status-row em')
   const networkPanelRule = extractRule(appVue, '.network-panel')
+  const speedContentRule = extractRule(appVue, '.speed-content')
+  const speedValuesRule = extractRule(appVue, '.speed-values')
 
   assert.doesNotMatch(appVue, /当前代理状态/)
   assert.doesNotMatch(appVue, /proxyDisplayStatus|resolveProxyDisplayStatus/)
@@ -53,6 +55,9 @@ test('program status panel removes proxy row and stretches remaining content', (
   assert.match(statusProgressValueRule, /white-space:\s*nowrap;/)
   assert.match(networkPanelRule, /min-height:\s*82px;/)
   assert.match(networkPanelRule, /padding-top:\s*18px;/)
+  assert.match(networkPanelRule, /grid-template-columns:\s*18px 96px minmax\(0, 1fr\);/)
+  assert.match(speedContentRule, /grid-template-columns:\s*minmax\(0, 1fr\) 82px;/)
+  assert.match(speedValuesRule, /justify-items:\s*start;/)
 })
 
 test('首页纸质风格降低过重字重，保留清晰层级', () => {
@@ -262,19 +267,23 @@ test('右侧信息卡片标题图标使用统一视觉尺寸', () => {
 
 test('运行日志使用独立阅读底色，纸质纹理和插画不进入文字层', () => {
   const logHeaderRule = extractRule(appVue, '.log-header')
+  const logColumnsRule = extractRule(appVue, '.log-columns')
   const logTableRule = extractRule(appVue, '.log-table')
   const logRowRule = extractRule(appVue, '.log-row')
   const logMessageRule = extractRule(appVue, '.log-message')
   const logCornerRule = extractRule(appVue, '.log-corner-image')
 
   assert.match(logHeaderRule, /padding-bottom:\s*8px;/)
-  assert.match(logTableRule, /height:\s*200px;/)
-  assert.match(logTableRule, /margin-top:\s*8px;/)
+  assert.match(logColumnsRule, /height:\s*200px;/)
+  assert.match(logColumnsRule, /margin-top:\s*8px;/)
+  assert.match(logColumnsRule, /grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\);/)
+  assert.match(logTableRule, /height:\s*100%;/)
+  assert.match(logTableRule, /margin-top:\s*0;/)
   assert.match(logTableRule, /background:\s*rgba\(252, 254, 255, 0\.56\);/)
   assert.match(logTableRule, /border:\s*1px solid rgba\(104, 141, 181, 0\.2\);/)
   assert.match(logTableRule, /box-shadow:\s*inset 0 1px 0 rgba\(255, 255, 255, 0\.62\);/)
-  assert.match(logRowRule, /grid-template-columns:\s*78px 58px minmax\(0, 1fr\);/)
-  assert.match(logRowRule, /gap:\s*8px;/)
+  assert.match(logRowRule, /grid-template-columns:\s*68px 58px minmax\(0, 1fr\);/)
+  assert.match(logRowRule, /gap:\s*6px;/)
   assert.match(logRowRule, /text-shadow:\s*none;/)
   assert.match(logRowRule, /filter:\s*none;/)
   assert.match(logMessageRule, /opacity:\s*1;/)

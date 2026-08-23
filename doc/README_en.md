@@ -24,9 +24,9 @@
 
 ---
 
-**Access_WeChat_Article** is a Python-based local research tool for helping researchers systematically organize public WeChat article materials and related metadata, including article titles, publication times, short links, collection status, and available engagement metrics.
+**Access_WeChat_Article** is a Python-based technical tool for helping researchers systematically process public WeChat articles and their metadata, such as reading trends and engagement metrics. The tool emphasizes **controllability, reproducibility, and research usability**, and can support **academic research** and **quantitative analysis** in communication studies, social science, public opinion research, data mining, and related fields.
 
-The project is designed for controllable, traceable, and reusable research workflows. It is suitable for communication studies, journalism, social science, public issue research, content analysis, course papers, and personal research projects.
+It aims to provide a clearer, verifiable, and maintainable research material workbench for communication studies, social science, public issue research, content analysis, and data mining. Researchers can use one workflow to organize public article materials, record fields, and prepare later analysis.
 
 > 📌 **Notice**
 >
@@ -42,16 +42,15 @@ The project is designed for controllable, traceable, and reusable research workf
 
 The v2 release currently supports **Windows** only, mainly Windows 10/11 desktop usage and local development. Linux and macOS are not target environments for v2.
 
-If you want to study, modify, or extend this project, please fork the repository first and work on your own branch. The Python environment is managed with `uv`; do not install dependencies into the system Python environment.
+If you want to study, modify, or extend this project, please fork the repository first and work on your own branch. It is recommended to use the `.venv` virtual environment under the project root for runtime and dependency installation, so the system Python environment and other projects are not affected.
 
 Contributions are welcome in these areas:
 
-- Desktop interaction, MITM capture workflow, structured fields, task scheduling, research workflow, and performance improvements.
-- Issues for bugs, feature requests, and technical discussion.
-- Pull requests for code, documentation, tests, or workflow improvements.
-- CI, testing, and type checking improvements.
+- Submit [issues](https://github.com/yeximm/Access_wechat_article/issues) to discuss problems, requirements, or technical details.
+- Submit pull requests to improve code, documentation, tests, or runtime workflows.
+- Introduce automated tests, type checks, or CI/CD pipelines to improve project quality and maintainability.
 
-For detailed contribution, conduct, and security guidance, see [Contribution Guide](./contributing_en.md).
+**Note**: Please use [GitHub](https://github.com/) [issues](https://github.com/yeximm/Access_wechat_article/issues) for problem reports and contribution discussions whenever possible. See the [Contribution And Issue Guide](./contributing_en.md).
 
 ---
 
@@ -166,7 +165,7 @@ This section shows the main application pages.
 The main service page is used to set collection count, select collection content, start or stop tasks, and view account recognition results, task progress, proxy status, network speed, and runtime logs.
 
 <p align="center">
-  <img src="../README/image-20260628122809991.png" alt="Main service page" width="92%">
+  <img src="../README/image-20260823134243765.png" alt="Main service page" width="92%">
 </p>
 
 ### Data Archive: Account List And Record Details
@@ -174,7 +173,7 @@ The main service page is used to set collection count, select collection content
 The data archive page is used to browse account-level material lists, article counts, update times, record details, archive status, and quick operations.
 
 <p align="center">
-  <img src="../README/image-20260628153743002.png" alt="Data archive page" width="92%">
+  <img src="../README/image-20260809231152200.png" alt="Data archive page" width="92%">
 </p>
 
 ### Collection History: Search And Summary
@@ -182,7 +181,7 @@ The data archive page is used to browse account-level material lists, article co
 The history page is used to filter records by keyword, collection type, task status, and date, and to view record details, success rate, latest collection date, and recent trends.
 
 <p align="center">
-  <img src="../README/image-20260628123525585.png" alt="Collection history page" width="92%">
+  <img src="../README/image-20260809231300175.png" alt="Collection history page" width="92%">
 </p>
 
 ### System Settings: Runtime And Proxy Configuration
@@ -190,7 +189,7 @@ The history page is used to filter records by keyword, collection type, task sta
 The settings page is used to manage base configuration, proxy switches, system proxy, CA certificates, environment checks, and cache cleanup.
 
 <p align="center">
-  <img src="../README/image-20260628123624595.png" alt="System settings page" width="92%">
+  <img src="../README/image-20260809202136836.png" alt="System settings page" width="92%">
 </p>
 
 ---
@@ -204,8 +203,6 @@ For questions, feature requests, or discussions, please use GitHub Issues.
 <p align="center">
   <img src="../README/qrcode_1749894334903.jpg" alt="Project discussion QR code" width="300" />
 </p>
-[![Stargazers repo roster for @yeximm/Access_wechat_article](http://reporoster.com/stars/yeximm/Access_wechat_article)](https://github.com/yeximm/Access_wechat_article/stargazers)
-[![Forkers repo roster for @yeximm/Access_wechat_article](http://reporoster.com/forks/yeximm/Access_wechat_article)](https://github.com/yeximm/Access_wechat_article/network/members)
 
 ---
 
@@ -219,11 +216,3 @@ Please read the license and project notice carefully before viewing, using, copy
 - Any modification, extension, deployment, distribution, or secondary development based on this repository is the responsibility of the user or third party.
 - Third-party software, hardware, platforms, or tools mentioned in this repository are only used to describe the runtime environment or technical background.
 - Risks and consequences arising from the use of third-party software, hardware, platforms, or tools are borne by the actual user.
-
-## ⭐ Star History
-
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yeximm/Access_wechat_article&type=date&theme=dark&legend=top-left&sealed_token=sHVZXrVhIaOKM2MT3nkUSR9xY3E2LjUkSgaadVvfNEb_XulAtc7642ognANFrOYtVnrQnK57Lb2WtzfnEUr-Z4Gr6OmlP_1w-HApsE1g8v7mlEX6vHKY8g1mALRq4hhBxGqLb9tyS5n1DTbZOW1R5jMjeUAfB8Ha8U_yzfJHhDLpFgC7v9oDUaDdopXc" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yeximm/Access_wechat_article&type=date&legend=top-left&sealed_token=sHVZXrVhIaOKM2MT3nkUSR9xY3E2LjUkSgaadVvfNEb_XulAtc7642ognANFrOYtVnrQnK57Lb2WtzfnEUr-Z4Gr6OmlP_1w-HApsE1g8v7mlEX6vHKY8g1mALRq4hhBxGqLb9tyS5n1DTbZOW1R5jMjeUAfB8Ha8U_yzfJHhDLpFgC7v9oDUaDdopXc" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=yeximm/Access_wechat_article&type=date&legend=top-left&sealed_token=sHVZXrVhIaOKM2MT3nkUSR9xY3E2LjUkSgaadVvfNEb_XulAtc7642ognANFrOYtVnrQnK57Lb2WtzfnEUr-Z4Gr6OmlP_1w-HApsE1g8v7mlEX6vHKY8g1mALRq4hhBxGqLb9tyS5n1DTbZOW1R5jMjeUAfB8Ha8U_yzfJHhDLpFgC7v9oDUaDdopXc" />
- </picture>

@@ -88,7 +88,6 @@ def build_app_config(mapping: Mapping[str, Any], *, project_root: str | Path) ->
     comment = _section(data, "comment")
     offline_cache = _section(data, "offline_cache")
     runtime = _section(data, "runtime")
-
     data_schema_version = _as_string(software, "data_schema_version")
     (
         article_title_poll_initial_interval_seconds,

@@ -49,7 +49,7 @@
 - 提交 pull request 优化代码、文档、测试或运行流程。
 - 引入自动化测试、类型检查或 CI/CD 流水线，提升项目质量和可维护性。
 
-**注**：问题反馈和贡献讨论请优先在 [GitHub](https://github.com/) 平台通过 [issues](https://github.com/yeximm/Access_wechat_article/issues) 进行。
+**注**：问题反馈和贡献讨论请优先在 [GitHub](https://github.com/) 平台通过 [issues](https://github.com/yeximm/Access_wechat_article/issues) 进行，参考 [贡献与 Issue 反馈指南](doc\contributing.md)。
 
 ---
 
@@ -131,7 +131,9 @@ http://127.0.0.1:8766/
 
 ## 🧭 可视化工作流
 
-这一部分用于展示程序的总体运行链路。 Mermaid 图展示程序核心模块之间的调用关系。
+这一部分用于展示程序的总体运行链路。 
+
+Mermaid 图展示程序核心模块之间的调用关系。
 
 ```mermaid
 flowchart LR
@@ -146,7 +148,7 @@ flowchart LR
     F --> B
 ```
 
-架构图用于更直观地展示桌面端、后端服务、代理解析、后台任务和页面展示之间的协作方式。
+架构图更直观地展示桌面端、后端服务、代理解析、后台任务和页面展示之间的协作方式。
 
 <p align="center">
   <img src="./README/64a99030-d5ec-4ddc-8802-1ae9a4a05626.png" alt="Access WeChat Article visual workflow architecture" width="92%">
@@ -165,8 +167,9 @@ flowchart LR
 主服务页用于配置采集数量、选择采集内容、启动或停止任务，并查看公众号识别结果、任务进度、代理状态、网络速率和实时运行日志。
 
 <p align="center">
-  <img src="./README/image-20260809235016082.png" alt="主服务页面运行图" width="92%">
+  <img src="./README/image-20260823134243765.png" alt="主服务页面运行图" width="92%">
 </p>
+
 
 
 

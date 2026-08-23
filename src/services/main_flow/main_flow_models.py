@@ -9,7 +9,8 @@ from typing import Any, Literal, Mapping
 
 DateFilterMode = Literal["all", "range", "before", "after"]
 OfflineArchiveMode = Literal["standard", "beta"]
-ArticleTaskStatus = Literal["success", "skipped_collected", "failed", "cancelled"]
+ArticleTaskStatus = Literal["running", "success", "skipped_collected", "failed", "cancelled"]
+ArticleTaskPhase = Literal["precheck", "foreground", "detail", "comments", "offline", "finished"]
 
 
 def _text(value: Any) -> str:
@@ -84,6 +85,8 @@ class MainFlowContext:
     cancel_token: Event = field(repr=False, compare=False)
     started_at: datetime
     state: Any = field(repr=False, compare=False)
+    # 事件入口只负责状态和日志聚合。
+    event_sink: Any | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +102,7 @@ class HomeArticleTarget:
     visible_rect: tuple[int, int, int, int]
     click_point: tuple[int, int]
     source_snapshot_id: str = ""
+    home_window_id: str = ""
     fingerprint: str = field(default="", init=False)
 
     def __post_init__(self) -> None:
@@ -126,9 +130,12 @@ class SingleArticleReceipt:
     task_id: str
     target_fingerprint: str
     status: ArticleTaskStatus
+    phase: ArticleTaskPhase = "finished"
     foreground_done: bool = False
+    progress_counted: bool = False
     tab_closed: bool = False
     article_saved: bool = False
+    detail_status: str = "pending"
     comments_status: str = "not_requested"
     offline_status: str = "not_requested"
     archive_dir: str | None = None
@@ -147,9 +154,12 @@ class SingleArticleReceipt:
             task_id=str(data.get("task_id") or ""),
             target_fingerprint=str(data.get("target_fingerprint") or ""),
             status=str(data.get("status") or "failed"),  # type: ignore[arg-type]
+            phase=str(data.get("phase") or "finished"),  # type: ignore[arg-type]
             foreground_done=bool(data.get("foreground_done", False)),
+            progress_counted=bool(data.get("progress_counted", False)),
             tab_closed=bool(data.get("tab_closed", False)),
             article_saved=bool(data.get("article_saved", False)),
+            detail_status=str(data.get("detail_status") or "pending"),
             comments_status=str(data.get("comments_status") or "not_requested"),
             offline_status=str(data.get("offline_status") or "not_requested"),
             archive_dir=data.get("archive_dir"),
@@ -167,7 +177,6 @@ class MainFlowSnapshot:
     status: str
     message: str
     runtime_state: dict[str, Any]
-    traffic: dict[str, Any]
     started_at: str
     finished_at: str | None = None
 
@@ -178,7 +187,6 @@ class MainFlowSnapshot:
             "taskId": self.task_id,
             "message": self.message,
             "runtimeState": dict(self.runtime_state),
-            "traffic": dict(self.traffic),
             "startedAt": self.started_at,
         }
         if self.finished_at:

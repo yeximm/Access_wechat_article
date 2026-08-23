@@ -99,3 +99,16 @@ test('项目内部证书块展示证书自身信息，不混入系统位置和�
   assert.doesNotMatch(projectBlock, /caCertificateStatus\.storePath/)
   assert.doesNotMatch(projectBlock, /caCertificateStatus\.caFileExists/)
 })
+
+test('CA certificate dialog install button has footer scoped primary styling', () => {
+  const primaryButtonStyle = requireSourceBlock(
+    settingsPageSource,
+    /\.mitm-cert-dialog-actions\s+:deep\(\.ant-btn\.config-action-button\.primary\)[\s\S]*?\n\}/,
+    'mitm certificate dialog primary button style',
+  )
+
+  assert.match(primaryButtonStyle, /color:\s*#ffffff/)
+  assert.match(primaryButtonStyle, /background:\s*#357FD9/)
+  assert.match(primaryButtonStyle, /border-color:\s*#357FD9/)
+  assert.doesNotMatch(primaryButtonStyle, /diagnostic-result-dialog/)
+})

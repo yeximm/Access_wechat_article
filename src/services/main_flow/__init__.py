@@ -14,7 +14,7 @@ from .main_flow_models import (
 )
 from .main_flow_service import MainFlowConflictError, MainFlowService
 from .main_flow_state import MainFlowState
-from .traffic_stats_aggregator import NetworkTrafficDelta, TrafficStatsAggregator
+from .main_flow_factory import build_main_flow_service
 
 __all__ = [
     "HomeArticleTarget",
@@ -24,8 +24,7 @@ __all__ = [
     "MainFlowService",
     "MainFlowSnapshot",
     "MainFlowState",
-    "NetworkTrafficDelta",
     "SingleArticleOptions",
     "SingleArticleReceipt",
-    "TrafficStatsAggregator",
+    "build_main_flow_service",
 ]

@@ -17,6 +17,10 @@ from src.modules.system.window_diagnostic_trace_store import (
 from src.services.runtime.window_click_flow_diagnostic_service import (
     WindowClickFlowDiagnosticService,
 )
+from src.services.task.huey_runtime_queue import (
+    ensure_huey_storage_ready,
+    runtime_huey_queue_dir,
+)
 
 
 _SAFE_ID_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
@@ -72,9 +76,7 @@ class WindowClickFlowHueyService:
             session_id or uuid4().hex[:12],
             fallback="session",
         )
-        queue_dir = (self._temp_root / "huey").resolve()
-        if not queue_dir.is_relative_to(self._temp_root):
-            raise ValueError("Huey窗口诊断队列目录超出临时目录")
+        queue_dir = runtime_huey_queue_dir(self._temp_root)
         queue_dir.mkdir(parents=True, exist_ok=True)
         self._queue_database_path = (
             queue_dir / f"window-click-flow-{normalized_session_id}.sqlite3"
@@ -174,8 +176,7 @@ class WindowClickFlowHueyService:
             self._jobs[job_id] = initial
             self._stop_flags[job_id] = stop_event
             self._trim_jobs()
-            self._start_consumer()
-            self._huey.enqueue(task)
+            self._enqueue_task(task)
             return dict(initial)
 
     def get(self, job_id: str) -> dict[str, Any]:
@@ -233,6 +234,11 @@ class WindowClickFlowHueyService:
             return
         self._consumer.start()
         self._consumer_started = True
+
+    def _enqueue_task(self, task: Any) -> None:
+        ensure_huey_storage_ready(self._huey, self._queue_database_path)
+        self._start_consumer()
+        self._huey.enqueue(task)
 
     def _execute_task(
         self,

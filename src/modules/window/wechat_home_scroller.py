@@ -21,7 +21,7 @@ CHROMIUM_RENDER_WINDOW_CLASS = "Chrome_RenderWidgetHostHWND"
 
 
 class WechatHomeScroller:
-    """短暂激活微信主页后发送滚轮消息，不移动用户的系统鼠标。"""
+    """滚动前激活微信主页并发送滚轮消息，不移动用户的系统鼠标。"""
 
     def __init__(
         self,
@@ -102,69 +102,51 @@ class WechatHomeScroller:
 
         user32 = self._user32 or ctypes.windll.user32
         _enable_per_monitor_dpi_awareness(user32)
-        previous_foreground = _get_foreground_window(user32)
-        should_restore = (
-            previous_foreground > 0
-            and not _belongs_to_window(
-                user32,
-                home_window.handle,
-                previous_foreground,
-            )
-        )
-
         try:
-            try:
-                self._home_guard.activate(home_window)
-            except HomeWindowNotClickableError:
+            self._home_guard.activate(home_window)
+        except HomeWindowNotClickableError:
+            return False
+        if not _foreground_belongs_to_window(
+            user32,
+            home_window.handle,
+        ):
+            return False
+
+        target_handle = _resolve_home_scroll_target(
+            user32,
+            home_handle=home_window.handle,
+        )
+        x, y = _scroll_point(home_window, visible_targets)
+        steps = (
+            self._wheel_steps
+            if wheel_steps is None
+            else max(1, int(wheel_steps))
+        )
+        wheel_delta = WHEEL_DELTA if normalized_direction == "up" else -WHEEL_DELTA
+
+        # Chromium 对一条大 delta 的后台滚轮消息处理不稳定，按标准滚轮刻度逐条发送。
+        for index in range(steps):
+            posted = bool(
+                user32.PostMessageW(
+                    target_handle,
+                    WM_MOUSEWHEEL,
+                    _make_wparam(wheel_delta),
+                    _make_lparam(x, y),
+                )
+            )
+            if not posted:
                 return False
-            if not _foreground_belongs_to_window(
-                user32,
-                home_window.handle,
+            if (
+                index + 1 < steps
+                and self._wheel_message_interval_seconds > 0
             ):
-                return False
+                self._sleep(self._wheel_message_interval_seconds)
 
-            target_handle = _resolve_home_scroll_target(
-                user32,
-                home_handle=home_window.handle,
-            )
-            x, y = _scroll_point(home_window, visible_targets)
-            steps = (
-                self._wheel_steps
-                if wheel_steps is None
-                else max(1, int(wheel_steps))
-            )
-            wheel_delta = WHEEL_DELTA if normalized_direction == "up" else -WHEEL_DELTA
-
-            # Chromium 对一条大 delta 的后台滚轮消息处理不稳定，按标准滚轮刻度逐条发送。
-            for index in range(steps):
-                posted = bool(
-                    user32.PostMessageW(
-                        target_handle,
-                        WM_MOUSEWHEEL,
-                        _make_wparam(wheel_delta),
-                        _make_lparam(x, y),
-                    )
-                )
-                if not posted:
-                    return False
-                if (
-                    index + 1 < steps
-                    and self._wheel_message_interval_seconds > 0
-                ):
-                    self._sleep(self._wheel_message_interval_seconds)
-
-            # 焦点不能在消息刚入队时立即收回，给 Chromium 留出一次处理时间。
-            if self._wheel_dispatch_settle_seconds > 0:
-                self._sleep(self._wheel_dispatch_settle_seconds)
-            return True
-        finally:
-            if should_restore:
-                _restore_previous_foreground(
-                    user32,
-                    previous_handle=previous_foreground,
-                    leased_handle=home_window.handle,
-                    kernel32=self._kernel32,
-                )
+        # 滚轮消息刚入队时给 Chromium 留出一次处理时间；滚动后不再恢复原前台窗口，
+        # 避免日期定位连续滚动时在微信和用户窗口之间反复抢焦点。
+        if self._wheel_dispatch_settle_seconds > 0:
+            self._sleep(self._wheel_dispatch_settle_seconds)
+        return True
 
 
 def _scroll_point(
@@ -197,90 +179,6 @@ def _resolve_home_scroll_target(user32: Any, *, home_handle: int) -> int:
     except Exception:
         pass
     return int(home_handle)
-
-
-def _restore_previous_foreground(
-    user32: Any,
-    *,
-    previous_handle: int,
-    leased_handle: int,
-    kernel32: Any | None,
-) -> None:
-    """只在微信仍持有焦点时恢复，避免覆盖用户刚刚主动选择的新窗口。"""
-
-    current_handle = _get_foreground_window(user32)
-    if current_handle == int(previous_handle):
-        return
-    if not _belongs_to_window(user32, leased_handle, current_handle):
-        return
-    try:
-        if not bool(user32.IsWindow(int(previous_handle))):
-            return
-    except Exception:
-        return
-
-    _set_foreground_window(user32, previous_handle)
-    if _foreground_belongs_to_window(user32, previous_handle):
-        return
-    _set_foreground_with_attached_input(
-        user32,
-        previous_handle,
-        current_handle,
-        kernel32=kernel32,
-    )
-
-
-def _set_foreground_window(user32: Any, handle: int) -> None:
-    try:
-        user32.BringWindowToTop(int(handle))
-    except Exception:
-        pass
-    try:
-        user32.SetForegroundWindow(int(handle))
-    except Exception:
-        pass
-    try:
-        user32.SetFocus(int(handle))
-    except Exception:
-        pass
-
-
-def _set_foreground_with_attached_input(
-    user32: Any,
-    handle: int,
-    foreground_handle: int,
-    *,
-    kernel32: Any | None,
-) -> None:
-    try:
-        resolved_kernel32 = kernel32 or ctypes.windll.kernel32
-        current_thread = int(resolved_kernel32.GetCurrentThreadId() or 0)
-        target_thread = int(
-            user32.GetWindowThreadProcessId(int(handle), None) or 0
-        )
-        foreground_thread = int(
-            user32.GetWindowThreadProcessId(int(foreground_handle), None) or 0
-        )
-    except Exception:
-        return
-
-    attached_threads: list[int] = []
-    for thread_id in {target_thread, foreground_thread}:
-        if thread_id <= 0 or thread_id == current_thread:
-            continue
-        try:
-            if bool(user32.AttachThreadInput(current_thread, thread_id, True)):
-                attached_threads.append(thread_id)
-        except Exception:
-            pass
-    try:
-        _set_foreground_window(user32, handle)
-    finally:
-        for thread_id in attached_threads:
-            try:
-                user32.AttachThreadInput(current_thread, thread_id, False)
-            except Exception:
-                pass
 
 
 def _get_foreground_window(user32: Any) -> int:

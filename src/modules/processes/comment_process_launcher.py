@@ -4,7 +4,7 @@ import multiprocessing
 from typing import Any, Mapping
 
 from src.modules.processes.process_channel import ProcessChannel
-from src.modules.processes.process_launcher import LaunchedProcess
+from src.modules.processes.process_launcher import LaunchedProcess, notify_process_started
 
 
 class MultiprocessingCommentProcessLauncher:
@@ -33,6 +33,7 @@ class MultiprocessingCommentProcessLauncher:
             parent_connection.close()
             child_connection.close()
             raise
+        pid = notify_process_started(process, label="comment")
         child_connection.close()
         return LaunchedProcess(
             process=process,
@@ -41,6 +42,7 @@ class MultiprocessingCommentProcessLauncher:
                 task_id=task_id,
                 attempt_id=attempt_id,
             ),
+            pid=pid,
         )
 
 

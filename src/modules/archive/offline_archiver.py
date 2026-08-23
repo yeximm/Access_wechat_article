@@ -66,6 +66,7 @@ class OfflineArchiveResult:
     index_html_path: Path | None = None
     assets_dir: Path | None = None
     resource_count: int = 0
+    download_bytes: int = 0
     message: str = ""
     warning: str = ""
 
@@ -73,7 +74,10 @@ class OfflineArchiveResult:
 class CapturedResponseStore:
     """保存 Playwright 页面本次加载产生的响应，不发起补充网络请求。"""
 
-    def __init__(self, assets_dir: str | Path) -> None:
+    def __init__(
+        self,
+        assets_dir: str | Path,
+    ) -> None:
         self.assets_dir = Path(assets_dir)
         self.assets_dir.mkdir(parents=True, exist_ok=True)
         self.resource_map: dict[str, str] = {}
@@ -81,6 +85,7 @@ class CapturedResponseStore:
         self.css_sources: dict[str, str] = {}
         self.media_candidates: list[MediaCandidate] = []
         self._media_urls: set[str] = set()
+        self.download_bytes = 0
 
     def capture(self, response: Any) -> bool:
         url = str(getattr(response, "url", "") or "").strip()
@@ -123,9 +128,16 @@ class CapturedResponseStore:
                 self.warnings.append(f"保存页面资源失败，已继续归档：{url}：{exc}")
             return False
         self.resource_map[url] = saved.relative_path
+        self.add_download_bytes(len(body))
         if content_type == "text/css":
             self.css_sources[saved.relative_path] = url
         return True
+
+    def add_download_bytes(self, value: int) -> None:
+        """累计本次离线缓存已经确认保存的下载字节，仅作为任务结果统计。"""
+
+        bytes_value = max(0, int(value or 0))
+        self.download_bytes += bytes_value
 
     def register_media_candidate(
         self,
@@ -297,6 +309,7 @@ def archive_offline_article(
             index_html_path=index_path,
             assets_dir=assets_dir,
             resource_count=len(resource_store.resource_map),
+            download_bytes=resource_store.download_bytes,
             message="离线缓存完成",
             warning=warning,
         )
@@ -311,6 +324,7 @@ def archive_offline_article(
             stage_dir=stage_dir,
             assets_dir=assets_dir,
             resource_count=len(resource_store.resource_map),
+            download_bytes=resource_store.download_bytes,
             message=f"离线缓存失败：{type(exc).__name__}: {exc}",
             warning="；".join(resource_store.warnings[:10]),
         )
@@ -560,6 +574,7 @@ def _download_explicit_video_posters(
                 content_type=content_type,
             )
             resource_store.resource_map[url] = saved.relative_path
+            resource_store.add_download_bytes(len(body))
         except Exception as exc:
             resource_store.warnings.append(
                 f"视频封面离线保存失败：{type(exc).__name__}"
@@ -686,6 +701,7 @@ def _download_context_image_urls(
                 content_type=content_type,
             )
             resource_store.resource_map[url] = saved.relative_path
+            resource_store.add_download_bytes(len(body))
         except Exception as exc:
             resource_store.warnings.append(
                 f"视频号附属图片保存失败：{type(exc).__name__}"
@@ -847,6 +863,7 @@ def _download_registered_media(
     for result in results:
         if result.ok and result.relative_path:
             resource_store.resource_map[result.source_url] = result.relative_path
+            resource_store.add_download_bytes(max(0, int(result.bytes_downloaded)))
             continue
         # 不附带候选 URL，避免鉴权参数进入日志或诊断弹窗。
         resource_store.warnings.append(result.message or "媒体资源下载失败")

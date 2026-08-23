@@ -1126,8 +1126,15 @@ watch(
   },
 )
 
+async function refreshOnActivated() {
+  await handleRefreshArchiveData()
+}
+
+defineExpose({
+  refreshOnActivated,
+})
+
 onMounted(() => {
-  void loadArchiveAccounts()
   startCacheProcessRotation()
 })
 

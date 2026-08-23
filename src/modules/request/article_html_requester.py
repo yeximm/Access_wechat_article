@@ -185,3 +185,4 @@ def _build_request_evidence(
         # 临时凭据只保存在本地 origin/request.json，不用于日志或公开结果。
         evidence["reference"] = dict(reference_data)
     return evidence
+

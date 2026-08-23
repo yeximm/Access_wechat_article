@@ -13,9 +13,11 @@ from src.services.capture.comment_process_control_service import (
 from src.services.capture.collected_article_lookup_service import (
     CollectedArticleLookupService,
 )
+from src.services.runtime.database_write_coordinator import DatabaseWriteCoordinator
 from src.services.task.initial_content_storage_huey_service import (
     InitialContentStorageHueyService,
     InitialContentStorageTaskOptions,
+    _saved_article_from_payload,
 )
 
 
@@ -34,9 +36,11 @@ class ArticleDetailCommentsHueyService(InitialContentStorageHueyService):
         runner: Callable[..., dict[str, Any]] | None = None,
         lookup_service: CollectedArticleLookupService | None = None,
         comment_process_control: Any | None = None,
+        write_coordinator: DatabaseWriteCoordinator | None = None,
         session_id: str | None = None,
         job_id_factory: Callable[[], str] | None = None,
         now: Callable[[], datetime] = datetime.now,
+        worker_count: int = 1,
     ) -> None:
         super().__init__(
             temp_root=temp_root,
@@ -59,8 +63,11 @@ class ArticleDetailCommentsHueyService(InitialContentStorageHueyService):
             wait_message_with_card="已读取首篇文章卡片，正在等待Huey执行单篇评论存储任务...",
             wait_message_without_card="正在等待Huey执行单篇评论存储任务...",
             extra_public_options={"storeCommentInfo": True},
+            worker_count=worker_count,
+            post_phase="comments",
         )
         self._comment_process_control = comment_process_control or CommentProcessControlService()
+        self._write_coordinator = write_coordinator or DatabaseWriteCoordinator()
 
     def start(
         self,
@@ -95,6 +102,49 @@ class ArticleDetailCommentsHueyService(InitialContentStorageHueyService):
             "storeCommentInfo": True,
         }
         return initial
+
+    def _run_post_task(
+        self,
+        *,
+        job_id: str,
+        article: Mapping[str, Any],
+        update: Callable[[dict[str, Any]], None],
+    ) -> dict[str, Any]:
+        started_at = time.monotonic()
+        saved = _saved_article_from_payload(article)
+        records = [dict(item) for item in article.get("records", []) if isinstance(item, Mapping)]
+        account_name = str(article.get("accountName") or "").strip()
+        capture_type = str(article.get("captureType") or "none")
+        items: list[dict[str, Any]] = []
+        result = self._run_comment_process(
+            job_id=job_id,
+            saved=saved,
+            context=None,
+            items=items,
+            update=update,
+            base_result={
+                "phase": "comments",
+                "records": records,
+                "accountName": account_name,
+                "captureType": capture_type,
+            },
+            records=records,
+            account_name=account_name,
+            capture_type=capture_type,
+            started_at=started_at,
+        )
+        status = str(result.get("status") or "failed").strip().lower()
+        skipped = status == "skipped"
+        success = status in {"success", "completed"}
+        return {
+            **dict(result),
+            "ok": success or skipped,
+            "status": "success" if success else ("skipped" if skipped else "failed"),
+            "phase": "comments",
+            "commentsStatus": "success" if success else ("skipped" if skipped else "failed"),
+            "message": _final_message(result, ok=success, skipped=skipped),
+            "totalSeconds": round(time.monotonic() - started_at, 3),
+        }
 
     def _build_save_success_result(
         self,
@@ -197,6 +247,7 @@ class ArticleDetailCommentsHueyService(InitialContentStorageHueyService):
             "article_directory": str(saved.article_directory),
             "html_source": str(saved.html_source or ""),
             "resource_manifest": list(saved.resource_manifest.to_json_values()),
+            "database_write_coordinator": self._write_coordinator,
             "timeout_seconds": float(self._config.comment.request_timeout_seconds),
             "page_interval_seconds": float(self._config.comment.page_interval_seconds),
             "max_pages": int(self._config.comment.max_pages),
@@ -210,6 +261,7 @@ class ArticleDetailCommentsHueyService(InitialContentStorageHueyService):
                 attempt_id=attempt_id,
                 payload=payload,
             )
+            self._register_active_attempt(job_id, attempt)
             items.append(
                 {
                     "label": "启动评论采集子进程",
@@ -250,6 +302,8 @@ class ArticleDetailCommentsHueyService(InitialContentStorageHueyService):
             )
 
             def on_progress(event: dict[str, Any]) -> None:
+                if event.get("internal"):
+                    return
                 items.append(_event_item(event))
                 update(
                     {
@@ -313,6 +367,8 @@ class ArticleDetailCommentsHueyService(InitialContentStorageHueyService):
                 "page_count": 0,
                 "html_comment_count": 0,
             }
+        finally:
+            self._unregister_active_attempt(job_id, attempt)
 
 
 def _comment_result_timeout_seconds(config: Any) -> float:
