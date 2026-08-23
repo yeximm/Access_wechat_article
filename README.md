@@ -49,7 +49,7 @@
 - 提交 pull request 优化代码、文档、测试或运行流程。
 - 引入自动化测试、类型检查或 CI/CD 流水线，提升项目质量和可维护性。
 
-**注**：问题反馈和贡献讨论请优先在 [GitHub](https://github.com/) 平台通过 [issues](https://github.com/yeximm/Access_wechat_article/issues) 进行，参考 [贡献与 Issue 反馈指南](doc\contributing.md)。
+**注**：问题反馈和贡献讨论请优先在 [GitHub](https://github.com/) 平台通过 [issues](https://github.com/yeximm/Access_wechat_article/issues) 进行，参考 [贡献与 Issue 反馈指南](doc/contributing.md)。
 
 ---
 
