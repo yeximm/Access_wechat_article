@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from datetime import date
 import re
 from typing import Any
 
@@ -147,9 +148,43 @@ class UiaWindowTestReader:
         self._max_nodes = max(1, int(max_nodes))
         self._min_visible_height = max(1, int(min_visible_height))
         self._date_list_control: Any | None = None
+        self._image_post_grid_control: Any | None = None
 
     def read(self, home_window: WindowInfo) -> UiaWindowTestSnapshot:
-        article_list, content_viewport = self._resolve_article_list(home_window)
+        try:
+            article_list, content_viewport = self._resolve_article_list(home_window)
+        except RuntimeError as exc:
+            if str(exc) != "公众号主页没有找到日期组列表":
+                raise
+            image_grid, content_viewport = self._resolve_image_post_grid(home_window)
+            if image_grid is None:
+                raise
+            cards, node_count, loading = _scan_image_post_grid(
+                image_grid,
+                content_viewport=content_viewport,
+                min_visible_height=self._min_visible_height,
+                max_depth=self._max_depth,
+                max_nodes=self._max_nodes,
+            )
+            group = UiaWindowTestDateGroup(
+                date_text="今天",
+                published_date=date.today().isoformat(),
+                date_rect=None,
+                group_rect=rect_to_tuple(
+                    _safe_get(image_grid, "BoundingRectangle", None)
+                ),
+                cards=cards,
+            )
+            return UiaWindowTestSnapshot(
+                groups=(group,) if cards else (),
+                all_cards=cards,
+                visible_cards=tuple(
+                    card for card in cards if card.visible_rect is not None
+                ),
+                content_viewport=content_viewport,
+                node_count=node_count,
+                loading=loading,
+            )
         if article_list is None:
             return UiaWindowTestSnapshot((), (), (), content_viewport)
         groups, node_count, loading = _scan_article_groups_from_tail(
@@ -233,6 +268,47 @@ class UiaWindowTestReader:
             content_viewport[3],
         )
         return article_list, content_viewport
+
+    def _resolve_image_post_grid(
+        self,
+        home_window: WindowInfo,
+    ) -> tuple[Any | None, Rect]:
+        """定位“贴图”分类的无日期双列网格。"""
+
+        if home_window.control is None or not home_window.has_valid_rect:
+            return None, (0, 0, 0, 0)
+        document = find_wechat_document_control(home_window.control)
+        if document is None:
+            raise RuntimeError("公众号主页没有可读取的 UIA DocumentControl")
+        document_rect = rect_to_tuple(getattr(document, "BoundingRectangle", None))
+        content_viewport = _rect_intersection(document_rect, home_window.rect)
+        if not _valid_rect(content_viewport):
+            raise RuntimeError("公众号主页 UIA 内容区域坐标无效")
+
+        grid = self._image_post_grid_control
+        if not _control_has_image_post_cards(grid, minimum=1):
+            grid = _find_image_post_grid(
+                document,
+                max_depth=min(self._max_depth, 10),
+                max_nodes=min(self._max_nodes, 512),
+            )
+            self._image_post_grid_control = grid
+        if grid is None:
+            return None, content_viewport
+
+        content_top = _lightweight_content_top(
+            document,
+            article_list=grid,
+            viewport=content_viewport,
+            max_depth=min(self._max_depth, 10),
+            max_nodes=min(self._max_nodes, 256),
+        )
+        return grid, (
+            content_viewport[0],
+            min(max(content_viewport[1], content_top), content_viewport[3]),
+            content_viewport[2],
+            content_viewport[3],
+        )
 
 
 def cards_after_marker(
@@ -341,7 +417,148 @@ def _is_title_text(text: str) -> bool:
         return False
     if value.lower() in _NON_TITLE_TEXT or value in _NON_TITLE_TEXT:
         return False
-    return not is_uia_date_text(value) and not is_uia_metric_text(value)
+    return (
+        not is_uia_date_text(value)
+        and not is_uia_metric_text(value)
+        and not _is_image_post_metric_text(value)
+    )
+
+
+def _is_image_post_metric_text(text: str) -> bool:
+    """贴图卡片只显示点赞/转发统计，不包含普通文章的“阅读”。"""
+
+    value = normalize_uia_text(text)
+    return bool(
+        re.search(
+            r"^赞\s*[\d.]+(?:万)?\+?(?:.*(?:朋友|转发|赞))?",
+            value,
+        )
+    )
+
+
+def _find_image_post_grid(
+    root: Any,
+    *,
+    max_depth: int,
+    max_nodes: int,
+) -> Any | None:
+    """查找至少包含一张贴图卡片的公共网格父节点。"""
+
+    queue: deque[tuple[Any, int]] = deque([(root, 0)])
+    best_match: Any | None = None
+    best_depth = -1
+    inspected = 0
+    while queue and inspected < max_nodes:
+        control, depth = queue.popleft()
+        inspected += 1
+        if _control_has_image_post_cards(control, minimum=1):
+            # 单卡场景下外层 Document 也可能把整个网格误看成一张卡；
+            # 继续向下寻找，取最深的直接卡片父节点。
+            if depth > best_depth:
+                best_match = control
+                best_depth = depth
+        if depth >= max_depth:
+            continue
+        queue.extend((child, depth + 1) for child in _safe_children(control))
+    return best_match
+
+
+def _control_has_image_post_cards(control: Any, *, minimum: int) -> bool:
+    if control is None:
+        return False
+    found = 0
+    for child in _safe_children(control):
+        if _image_post_card_texts(child) is None:
+            continue
+        found += 1
+        if found >= max(1, int(minimum)):
+            return True
+    return False
+
+
+def _image_post_card_texts(control: Any) -> tuple[str, str] | None:
+    if (
+        str(_safe_get(control, "ControlTypeName", "") or "").lower()
+        != "groupcontrol"
+    ):
+        return None
+    if not _valid_rect(rect_to_tuple(_safe_get(control, "BoundingRectangle", None))):
+        return None
+    nodes = _snapshot_tree(
+        control,
+        max_depth=8,
+        max_nodes=96,
+    )
+    if not nodes:
+        return None
+    leaves = _descendant_text_leaves(nodes)
+    names = [nodes[index].name for index in leaves[0]]
+    metric = next((name for name in names if _is_image_post_metric_text(name)), "")
+    title_index = _title_leaf(0, nodes=nodes, leaves=leaves)
+    title = nodes[title_index].name if title_index is not None else ""
+    if not title or not metric:
+        return None
+    return title, metric
+
+
+def _scan_image_post_grid(
+    grid: Any,
+    *,
+    content_viewport: Rect,
+    min_visible_height: int,
+    max_depth: int,
+    max_nodes: int,
+) -> tuple[tuple[UiaWindowTestArticleCard, ...], int, bool]:
+    """把贴图双列网格转换为主流程可点击的卡片快照。"""
+
+    cards: list[UiaWindowTestArticleCard] = []
+    node_count = 0
+    loading = False
+    published_date = date.today().isoformat()
+    for child in _safe_children(grid):
+        loading = loading or _control_is_loading(
+            child,
+            content_viewport=content_viewport,
+        )
+        if len(cards) >= _ARTICLE_CARD_GROUP_LIMIT:
+            break
+        if _image_post_card_texts(child) is None:
+            continue
+        nodes = _snapshot_tree(
+            child,
+            max_depth=max_depth,
+            max_nodes=min(max_nodes, _ARTICLE_CARD_NODE_LIMIT),
+        )
+        node_count += len(nodes)
+        if not nodes:
+            continue
+        leaves = _descendant_text_leaves(nodes)
+        cards.append(
+            _article_card(
+                0,
+                date_text="今天",
+                published_date=published_date,
+                date_rect=None,
+                nodes=nodes,
+                leaves=leaves,
+                content_viewport=content_viewport,
+                min_visible_height=min_visible_height,
+            )
+        )
+    return (
+        tuple(
+            sorted(
+                cards,
+                key=lambda card: (
+                    card.card_rect[1],
+                    card.card_rect[0],
+                    card.raw_title,
+                ),
+            )
+        ),
+        node_count,
+        loading,
+    )
 
 
 def _find_date_group_list(

@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
 
 WECHAT_ARTICLE_HOST = "mp.weixin.qq.com"
 ARTICLE_REQUIRED_KEYS = frozenset({"mid", "idx", "sn"})
+SHORT_ARTICLE_PATH_PATTERN = re.compile(r"^/s/[A-Za-z0-9_-]{16,128}$")
 SENSITIVE_QUERY_KEYS = frozenset(
     {
         "key",
@@ -198,11 +199,20 @@ def _analyze_article_url(url: str) -> tuple[str, ...] | None:
         return None
     if (parsed.hostname or "").lower() != WECHAT_ARTICLE_HOST:
         return None
-    if parsed.path.rstrip("/") != "/s":
-        return None
 
+    normalized_path = parsed.path.rstrip("/")
     query = parse_qs(parsed.query, keep_blank_values=True)
     keys = set(query)
+
+    # 微信主页中的贴图/图片消息可能直接导航到公开短链，而不是先暴露
+    # 带 __biz、mid、idx、sn 和临时 key 的传统文章长链。监听器在单篇
+    # 点击前才启动，因此可以安全地把同域的 /s/<token> 主导航作为候选；
+    # 后续仍会校验响应正文或使用该 reference 补取并解析页面。
+    if SHORT_ARTICLE_PATH_PATTERN.fullmatch(normalized_path):
+        return tuple(sorted(keys))
+
+    if normalized_path != "/s":
+        return None
     if not ({"__biz", "biz"} & keys):
         return None
     if not ARTICLE_REQUIRED_KEYS.issubset(keys):
