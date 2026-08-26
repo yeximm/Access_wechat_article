@@ -24,6 +24,7 @@ METRIC_KEYS = {
 }
 
 _TEXT_SHARE_ITEM_SHOW_TYPES = frozenset({"10"})
+_IMAGE_SHARE_ITEM_SHOW_TYPES = frozenset({"8"})
 
 
 def extract_html_comment_count(html_text: str) -> int | None:
@@ -91,7 +92,75 @@ def _has_valid_article_body(source: str) -> bool:
     body_text = re.sub(r"\s+", "", html_module.unescape("".join(parser.text_parts)))
     if parser.found and (len(body_text) >= 4 or parser.media_count > 0):
         return True
-    return _has_valid_text_share_article(source)
+    return (
+        _has_valid_embedded_article_body(source)
+        or _has_valid_text_share_article(source)
+        or _has_valid_image_share_article(source)
+    )
+
+
+def _has_valid_image_share_article(source: str) -> bool:
+    """兼容微信贴图页：正文可能只存在于页面脚本的隐藏字段中。"""
+    if not _is_image_share_article(source):
+        return False
+    if not (_extract_title(source) and _extract_publish_time(source)):
+        return False
+    return _has_image_share_metadata(source)
+
+
+def _is_image_share_article(source: str) -> bool:
+    return _extract_item_show_type(source) in _IMAGE_SHARE_ITEM_SHOW_TYPES
+
+
+def _has_valid_embedded_article_body(source: str) -> bool:
+    """安全识别微信隐藏字段正文，不执行页面 JavaScript。"""
+    content_match = re.search(
+        r'''\bcontent_noencode\b\s*[:=]\s*(["'])(?P<value>.*?)\1''',
+        source,
+        re.S | re.I,
+    )
+    if content_match:
+        content = _decode_embedded_body_for_probe(content_match.group("value"))
+        has_media = bool(
+            re.search(r"<(?:img|video|audio|iframe)\b", content, re.I)
+        )
+        visible_text = re.sub(r"(?is)<[^>]+>", "", content)
+        visible_text = re.sub(
+            r"\s+", "", html_module.unescape(visible_text)
+        )
+        return has_media or len(visible_text) >= 4
+    return False
+
+
+def _decode_embedded_body_for_probe(value: str) -> str:
+    """只解码字符串转义；不求值、不执行微信页面脚本。"""
+    text = re.sub(
+        r"\\x([0-9a-fA-F]{2})",
+        lambda item: chr(int(item.group(1), 16)),
+        str(value or ""),
+    )
+    text = re.sub(
+        r"\\u([0-9a-fA-F]{4})",
+        lambda item: chr(int(item.group(1), 16)),
+        text,
+    )
+    return html_module.unescape(text)
+
+
+def _has_image_share_metadata(source: str) -> bool:
+    """贴图没有隐藏正文时，只接受微信公开的原图清单作为正文证据。"""
+    return bool(
+        re.search(
+            r"\b(?:share_imageinfo|picture_page_info_list)\b",
+            source,
+            re.I,
+        )
+        and re.search(
+            r"\bcdn_url\b.{0,1200}?https?(?::|\\u003a|\\x3a)(?:/|\\/|\\u002f|\\x2f){2}mmbiz\.qpic\.cn(?:/|\\/|\\u002f|\\x2f)",
+            source,
+            re.S | re.I,
+        )
+    )
 
 
 def _has_valid_text_share_article(source: str) -> bool:
@@ -119,10 +188,10 @@ def _extract_item_show_type(source: str) -> str:
     return _first_text(
         source,
         (
-            r"\bwindow\.real_item_show_type\s*=\s*['\"](?P<value>\d+)['\"]",
-            r"\bwindow\.item_show_type\s*=\s*['\"](?P<value>\d+)['\"]",
-            r"\breal_item_show_type\s*[:=]\s*['\"](?P<value>\d+)['\"]",
-            r"\bitem_show_type\s*[:=]\s*['\"](?P<value>\d+)['\"]",
+            r"\bwindow\.real_item_show_type\s*=\s*['\"]?(?P<value>\d+)",
+            r"\bwindow\.item_show_type\s*=\s*['\"]?(?P<value>\d+)",
+            r"\breal_item_show_type\s*[:=]\s*['\"]?(?P<value>\d+)",
+            r"['\"]?item_show_type['\"]?\s*[:=]\s*['\"]?(?P<value>\d+)",
         ),
     )
 
